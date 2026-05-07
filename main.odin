@@ -246,14 +246,15 @@ draw_text :: proc(x, y: f32, color: Color, font_size: f32, format: string, args:
 
 update_physics :: proc(state: ^GameState, dt: f32) {
 	ground_plane := physics.Collider{
-		offset = linalg.matrix4_translate_f32({0, -0.25, 0}),
-		shape = physics.PlaneShape{ normal = {0, 1, 0 } }
+		local_offset = linalg.matrix4_translate_f32({0, -0.25, 0}),
+		shape        = physics.PlaneShape{ normal = {0, 1, 0 } }
 	}
+	physics.coll_recompute_transform(&ground_plane)
 
 	physics.begin_world(&state.world)
-
 	for &item in state.items {
 		physics.rb_recompute_transform(&item.rigidbody)
+		physics.coll_recompute_transform(&item.coll)
 	}
 
 	// Collide everything with the ground

@@ -104,6 +104,7 @@ begin_world :: proc(world: ^World) {
 	world.contact_idx = 0
 }
 
+// TODO: consider doing this lazily
 rb_recompute_transform :: proc(rigidbody : ^Rigidbody) {
 	rigidbody._transform = linalg.matrix4_from_quaternion(rigidbody.rotation)
 
@@ -333,15 +334,25 @@ generate_contacts_plane_x_vertex :: proc(
 }
 
 // NOTE: possibly slow. We may want to cache the inverse too?
-to_relative_pos :: proc(transform: Mat4, relative: Vec3) -> Vec3 {
-	inverse := linalg.inverse(transform)
-	inverted := inverse * vec3_to_vec4(relative)
-	return vec4_to_vec3(inverted)
+coll_relative_pos :: proc(coll: ^Collider, world: Vec3) -> Vec3 {
+	return mat4_mul_vec3(coll._transform_inverse, world)
 }
 
-to_world_pos :: proc(transform: Mat4, world: Vec3) -> Vec3 {
-	h := transform * vec3_to_vec4(world)
-	return vec4_to_vec3(h)
+coll_world_pos :: proc(coll: ^Collider, relative: Vec3) -> Vec3 {
+	return mat4_mul_vec3(coll._transform, relative)
+}
+
+rb_relative_pos :: proc(rigidbody: ^Rigidbody, world: Vec3) -> Vec3 {
+	return mat4_mul_vec3(rigidbody._transform_inverse, world)
+}
+
+rb_world_pos :: proc(rigidbody: ^Rigidbody, relative: Vec3) -> Vec3 {
+	return mat4_mul_vec3(rigidbody._transform, relative)
+}
+
+mat4_mul_vec3 :: proc(mat: Mat4, vec: Vec3) -> Vec3 {
+	result := mat * vec3_to_vec4(vec)
+	return vec4_to_vec3(result)
 }
 
 @(private)
@@ -369,7 +380,7 @@ get_contact_sphere_x_box :: proc(
 	sphere_coll: ^Collider, sphere: SphereShape, sphere_pos: Vec3,
 	box_coll: ^Collider, box: BoxShape, box_pos: Vec3,
 ) -> (contact: Contact, ok: bool) {
-	sphere_pos_relative := to_relative_pos(box_coll.rigidbody._transform, sphere_pos)
+	sphere_pos_relative := coll_relative_pos(box_coll, sphere_pos)
 
 	if abs(sphere_pos_relative.x) - box.half_size.x > sphere.radius {return}
 	if abs(sphere_pos_relative.y) - box.half_size.y > sphere.radius {return}
@@ -388,7 +399,7 @@ get_contact_sphere_x_box :: proc(
 		return
 	}
 
-	closest_point := to_world_pos(box_coll.rigidbody._transform, closest_point_relative)
+	closest_point := coll_world_pos(box_coll, closest_point_relative)
 
 	to_sphere := sphere_pos - closest_point
 	normal    := linalg.normalize(to_sphere)
@@ -408,10 +419,10 @@ get_contact_vertex_x_box :: proc(
 	vertex_box_coll: ^Collider, vertex: Vec3, vertex_box_pos: Vec3,
 	box_coll: ^Collider, box: BoxShape, box_pos: Vec3,
 ) -> (contact: Contact, ok: bool) {
-	vertex_relative         := to_relative_pos(box_coll.rigidbody._transform, vertex)
-	vertex_box_pos_relative := to_relative_pos(box_coll.rigidbody._transform, vertex_box_pos)
+	vertex_relative         := coll_relative_pos(box_coll, vertex)
+	vertex_box_pos_relative := coll_relative_pos(box_coll, vertex_box_pos)
 
-	// The support function that computes the normal should look like this:
+	// Opinion 1: The support function that computes the normal should look like this:
 	//              ^
 	//    \_        |         _/
 	//  <-  \________________/   ->
@@ -419,7 +430,11 @@ get_contact_vertex_x_box :: proc(
 	//    /         |         \
 	//              v
 	//
-	// In this way, the collision handling remains the same at the cornersr regardless of how th ebox was stretched.
+	// In this way, the collision handling remains the same at the cornersr regardless of how the box was stretched.
+	// That being said, we probably want to change the normal based on how the other cube was oriented,
+	// in which case this method is not right, and we'll have to update it. I reckon it's a matter of taking this normal,
+	// dotting it with all 3 axes of the incoming box and picking the one with the largest value, so this computation
+	// would stil be needed in some sense.
 
 	x_dist := box.half_size.x - abs(vertex_relative.x)
 	y_dist := box.half_size.y - abs(vertex_relative.y)
@@ -429,20 +444,21 @@ get_contact_vertex_x_box :: proc(
 	if y_dist < 0 {return}
 	if z_dist < 0 {return}
 
-	closest_point := vertex_relative
+	closest_point_relative := vertex_relative
 	if x_dist < y_dist && x_dist < z_dist {
-		closest_point.x = math.sign(vertex_relative.x) * box.half_size.x
+		closest_point_relative.x = math.sign(vertex_relative.x) * box.half_size.x
 	} else if y_dist < z_dist /* && y_dist < x_dist (inferred from prior checks) */ {
-		closest_point.y = math.sign(vertex_relative.y) * box.half_size.y
+		closest_point_relative.y = math.sign(vertex_relative.y) * box.half_size.y
 	} else /* if z_dist < x_dist && z_dist < y_dist (inferred from prior checks) */ {
-		closest_point.z = math.sign(vertex_relative.z) * box.half_size.z
+		closest_point_relative.z = math.sign(vertex_relative.z) * box.half_size.z
 	}
 
+	closest_point := coll_world_pos(box_coll, closest_point_relative)
 	to_closest_point := closest_point - vertex
 
 	contact.penetration  = linalg.length(to_closest_point)
 	contact.normal       = to_closest_point / contact.penetration
-	contact.position     = closest_point
+	contact.position     = vertex
 	contact.colliders[0] = vertex_box_coll
 	contact.colliders[1] = box_coll
 
@@ -537,17 +553,19 @@ generate_contacts_box_x_box :: proc(
 	}
 
 	acc : ContactAccumulator
-	acc.min_depth = math.INF_F32
 
 	push_contact :: proc(acc: ^ContactAccumulator, new_contact: Contact) {
 		if new_contact.penetration < acc.min_depth {return}
+		if new_contact.normal == 0 {return}
 
-		acc.min_depth = linalg.min(acc.min_depth, new_contact.penetration)
-
+		acc.min_depth = math.INF_F32
+		found := false
 		for &contact, i in acc.max_contacts {
-			if contact.penetration >= new_contact.penetration {continue}
-			acc.max_contacts[i] = new_contact
-			break
+			if !found && new_contact.penetration > contact.penetration {
+				acc.max_contacts[i] = new_contact
+				found = true
+			}
+			acc.min_depth = linalg.min(acc.min_depth, new_contact.penetration)
 		}
 	}
 
