@@ -38,7 +38,7 @@ Rigidbody :: struct {
 
 	// Derived data
 
-	_transform : Mat4,
+	_transform, _transform_inverse : Mat4,
 }
 
 rigidbody :: proc(position := Vec3{0, 0, 0}, rotation := linalg.QUATERNIONF32_IDENTITY) -> Rigidbody {
@@ -53,8 +53,10 @@ NILL_RIGIDBODY := Rigidbody{}
 
 Collider :: struct {
 	rigidbody : ^Rigidbody,
-	offset    : Mat4,
 	shape     : ColliderShape,
+	local_offset    : Mat4,
+
+	_transform, _transform_inverse : Mat4, 
 }
 
 ColliderShape :: union {
@@ -65,9 +67,9 @@ ColliderShape :: union {
 
 collider :: proc(rb: ^Rigidbody, shape: ColliderShape, offset := linalg.MATRIX4F32_IDENTITY) -> Collider {
 	return Collider {
-		rigidbody = rb,
-		offset    = offset,
-		shape     = shape,
+		rigidbody    = rb,
+		local_offset = offset,
+		shape        = shape,
 	}
 }
 
@@ -108,6 +110,18 @@ rb_recompute_transform :: proc(rigidbody : ^Rigidbody) {
 	rigidbody._transform[0, 3] = rigidbody.position[0]
 	rigidbody._transform[1, 3] = rigidbody.position[1]
 	rigidbody._transform[2, 3] = rigidbody.position[2]
+
+	rigidbody._transform_inverse = linalg.matrix4_inverse(rigidbody._transform)
+}
+
+coll_recompute_transform :: proc(coll: ^Collider) {
+	if coll.rigidbody == nil {
+		coll._transform = coll.local_offset
+	} else {
+		coll._transform = coll.rigidbody._transform * coll.local_offset
+	}
+
+	coll._transform_inverse = linalg.matrix4_inverse(coll._transform)
 }
 
 generate_contacts_for_colliders :: proc(a, b: ^Collider, dst: ^World) {
@@ -164,11 +178,7 @@ vec3_to_vec4 :: proc(p: Vec3) -> Vec4 {
 }
 
 get_collider_pos :: proc(c: ^Collider) -> Vec3 {
-	return Vec3{
-		c.rigidbody._transform[0, 3] + c.offset[0, 3],
-		c.rigidbody._transform[1, 3] + c.offset[1, 3],
-		c.rigidbody._transform[2, 3] + c.offset[2, 3],
-	}
+	return get_axis(c._transform, 3)
 }
 
 @(private)
@@ -254,9 +264,9 @@ get_box_half_size_oriented :: proc(box_coll: ^Collider, box: BoxShape) -> Vec3 {
 
 get_box_axes :: proc(box_coll: ^Collider, box: BoxShape) -> Vec3 {
 	return (
-		get_axis(box_coll.rigidbody._transform, 0) + 
-		get_axis(box_coll.rigidbody._transform, 1) + 
-		get_axis(box_coll.rigidbody._transform, 2)
+		get_collider_axis(box_coll, 0) + 
+		get_collider_axis(box_coll, 1) + 
+		get_collider_axis(box_coll, 2)
 	)
 }
 
@@ -293,8 +303,10 @@ get_axis :: proc(mat: Mat4, axis: int) -> Vec3 #no_bounds_check {
 	}
 }
 
+// NOTE: Assumes collider itself was not also transformed.
+// TODO: Each collider might need it's own matrix pairs.
 get_collider_axis :: proc(coll: ^Collider, axis: int) -> Vec3 {
-	return get_axis(coll.rigidbody._transform, axis)
+	return get_axis(coll._transform, axis)
 }
 
 @(private)
@@ -391,7 +403,6 @@ get_contact_sphere_x_box :: proc(
 	return 
 }
 
-
 // Almost, but not quite the same as sphere x box
 get_contact_vertex_x_box :: proc(
 	vertex_box_coll: ^Collider, vertex: Vec3, vertex_box_pos: Vec3,
@@ -400,24 +411,22 @@ get_contact_vertex_x_box :: proc(
 	vertex_relative         := to_relative_pos(box_coll.rigidbody._transform, vertex)
 	vertex_box_pos_relative := to_relative_pos(box_coll.rigidbody._transform, vertex_box_pos)
 
-	if abs(vertex_relative.x) > box.half_size.x {return}
-	if abs(vertex_relative.y) > box.half_size.y {return}
-	if abs(vertex_relative.z) > box.half_size.z {return}
+	x_dist := box.half_size.x - abs(vertex_relative.x)
+	y_dist := box.half_size.y - abs(vertex_relative.y)
+	z_dist := box.half_size.z - abs(vertex_relative.z)
 
-	// TODO: The support function that computes the normal should look like
-	//              ^
-	//    \_        |         _/
-	//  <-  \________________/   ->
-	//     _/                \_
-	//    /         |          \
-	//              v 
+	if x_dist < 0 {return}
+	if y_dist < 0 {return}
+	if z_dist < 0 {return}
 
-	closest_point_relative: Vec3
-	closest_point_relative.x = math.clamp(vertex_relative.x, -box.half_size.x, box.half_size.x)
-	closest_point_relative.y = math.clamp(vertex_relative.y, -box.half_size.y, box.half_size.y)
-	closest_point_relative.z = math.clamp(vertex_relative.z, -box.half_size.z, box.half_size.z)	
-
-	closest_point := to_world_pos(box_coll.rigidbody._transform, closest_point_relative)
+	closest_point := vertex_relative
+	if x_dist < y_dist && x_dist < z_dist {
+		closest_point.x = math.sign(vertex_relative.x) * box.half_size.x
+	} else if y_dist < z_dist /* && y_dist < x_dist (inferred from prior checks) */ {
+		closest_point.y = math.sign(vertex_relative.y) * box.half_size.y
+	} else /* if z_dist < x_dist && z_dist < y_dist (inferred from prior checks) */ {
+		closest_point.z = math.sign(vertex_relative.z) * box.half_size.z
+	}
 
 	to_closest_point := closest_point - vertex
 
