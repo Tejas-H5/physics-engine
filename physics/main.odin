@@ -487,59 +487,59 @@ generate_contacts_box_x_box :: proc(
 	// Separating Axes.
 	// If the boxes don't overlap on these 15 axes, then we know for sure that they don't touch
 
-	has_overlap_on_any_seperating_axis :: proc(
+	has_no_overlap_on_any_seperating_axis :: proc(
 		box_a_coll: ^Collider, box_a: BoxShape, box_a_pos: Vec3,
 		box_b_coll: ^Collider, box_b: BoxShape, box_b_pos: Vec3,
 	) -> bool {
 		axis_1 := get_collider_axis(box_a_coll, 0)
-		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_1) {return true}
+		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_1) {return true}
 
 		axis_2 := get_collider_axis(box_a_coll, 1)
-		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_2) {return true}
+		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_2) {return true}
 
 		axis_3 := get_collider_axis(box_a_coll, 2)
-		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_3) {return true}
+		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_3) {return true}
 
 		axis_4 := get_collider_axis(box_b_coll, 0)
-		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_4) {return true}
+		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_4) {return true}
 
 		axis_5 := get_collider_axis(box_b_coll, 1)
-		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_5) {return true}
+		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_5) {return true}
 
 		axis_6 := get_collider_axis(box_b_coll, 2)
-		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_6) {return true}
+		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_6) {return true}
 
 		axis_7 := linalg.cross(axis_1, axis_4)
-		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_7) {return true}
+		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_7) {return true}
 
 		axis_8 := linalg.cross(axis_1, axis_5)
-		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_8) {return true}
+		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_8) {return true}
 
 		axis_9 := linalg.cross(axis_1, axis_6)
-		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_9) {return true}
+		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_9) {return true}
 
 		axis_10 := linalg.cross(axis_2, axis_4)
-		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_10) {return true}
+		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_10) {return true}
 
 		axis_11 := linalg.cross(axis_2, axis_5)
-		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_11) {return true}
+		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_11) {return true}
 
 		axis_12 := linalg.cross(axis_2, axis_6)
-		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_12) {return true}
+		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_12) {return true}
 
 		axis_13 := linalg.cross(axis_3, axis_4)
-		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_13) {return true}
+		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_13) {return true}
 
 		axis_14 := linalg.cross(axis_3, axis_5)
-		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_14) {return true}
+		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_14) {return true}
 
 		axis_15 := linalg.cross(axis_3, axis_6)
-		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_15) {return true}
+		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_15) {return true}
 
 		return false
 	}
 
-	if !has_overlap_on_any_seperating_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos) {
+	if has_no_overlap_on_any_seperating_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos) {
 		return
 	}
 
@@ -549,23 +549,21 @@ generate_contacts_box_x_box :: proc(
 
 	ContactAccumulator :: struct{
 		max_contacts: [4]Contact,
-		min_depth : f32,
+		min_idx : int,
 	}
 
 	acc : ContactAccumulator
 
 	push_contact :: proc(acc: ^ContactAccumulator, new_contact: Contact) {
-		if new_contact.penetration < acc.min_depth {return}
+		if new_contact.penetration < acc.max_contacts[acc.min_idx].penetration {return}
 		if new_contact.normal == 0 {return}
 
-		acc.min_depth = math.INF_F32
-		found := false
+		acc.max_contacts[acc.min_idx] = new_contact
+
 		for &contact, i in acc.max_contacts {
-			if !found && new_contact.penetration > contact.penetration {
-				acc.max_contacts[i] = new_contact
-				found = true
+			if contact.penetration < acc.max_contacts[acc.min_idx].penetration {
+				acc.min_idx = i
 			}
-			acc.min_depth = linalg.min(acc.min_depth, new_contact.penetration)
 		}
 	}
 
@@ -706,7 +704,7 @@ overlap_on_axis :: proc(
 	box_b_radius := transform_to_axis(box_b_coll, box_b, box_b_pos, axis)
 
 	a_to_b := box_b_pos - box_a_pos
-	distance := linalg.length(a_to_b)
+	distance := abs(linalg.dot(axis, a_to_b))
 
 	return distance <= box_a_radius + box_b_radius
 }
@@ -726,9 +724,14 @@ transform_to_axis :: proc(
 	//         |        +     |     
 	//         |         --_  |
 	//         _----------- --+ B
+
+	x_amount := abs(linalg.dot(axis, get_collider_axis(coll, 0)))
+	y_amount := abs(linalg.dot(axis, get_collider_axis(coll, 1)))
+	z_amount := abs(linalg.dot(axis, get_collider_axis(coll, 2)))
+
 	return (
-		box.half_size.x * abs(linalg.dot(axis, get_collider_axis(coll, 1))) +
-		box.half_size.y * abs(linalg.dot(axis, get_collider_axis(coll, 2))) +
-		box.half_size.z * abs(linalg.dot(axis, get_collider_axis(coll, 3)))
+		box.half_size.x * x_amount +
+		box.half_size.y * y_amount +
+		box.half_size.z * z_amount
 	)
 }
