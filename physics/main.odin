@@ -11,41 +11,77 @@ Mat4  :: linalg.Matrix4f32
 Mat3  :: linalg.Matrix3f32
 Color :: rl.Color
 
+
 // Created while reading Ian Millington - Game Physics-Engine Development. Actually amazing book.
 // However I have opted to use inbuilt odin stuff where possible, and a procedural style instead of OOP.
 // We may actually be slower! TODO: elaborate
 
+World :: struct {
+	contacts    : []Contact,
+	contact_idx : int,
+}
+
+make_world :: proc(max_num_contacts: int) -> World {
+	return World {
+		contacts = make([]Contact, max_num_contacts),
+	}
+}
+
+delete_world :: proc(world: ^World) {
+	delete(world.contacts)
+}
+
 Rigidbody :: struct {
 	position : Vec3,
 	rotation : Quat,
-	iniertia_tensor : Mat3,
+	inertia_tensor : Mat3,
 
 	// Derived data
 
 	_transform : Mat4,
 }
 
+rigidbody :: proc(position := Vec3{0, 0, 0}, rotation := linalg.QUATERNIONF32_IDENTITY) -> Rigidbody {
+	return {
+		position = position,
+		rotation = rotation,
+	}
+}
+
+// TODO: consider not using rodata
+NILL_RIGIDBODY := Rigidbody{}
+
 Collider :: struct {
-	rigidbody   : Rigidbody,
-	offset : Mat4,
-	shape  : ColliderShape,
+	rigidbody : ^Rigidbody,
+	offset    : Mat4,
+	shape     : ColliderShape,
 }
 
 ColliderShape :: union {
-	Sphere, 
-	Plane,
-	Box,
+	SphereShape, 
+	PlaneShape,
+	BoxShape,
 }
 
-Sphere :: struct {
+collider :: proc(rb: ^Rigidbody, shape: ColliderShape, offset := linalg.MATRIX4F32_IDENTITY) -> Collider {
+	return Collider {
+		rigidbody = rb,
+		offset    = offset,
+		shape     = shape,
+	}
+}
+
+
+// A real sphere would have a position. This is merely a shape.
+SphereShape :: struct {
 	radius: f32,
 }
 
-Plane :: struct {
+PlaneShape :: struct {
 	normal: Vec3,
 }
 
-Box :: struct {
+BoxShape :: struct {
 	half_size : Vec3,
 }
 
@@ -58,42 +94,59 @@ Contact :: struct {
 	// The depth of penetration
 	penetration : f32,
 
-	colliders: [2]^Collider
+	// If you're resolving contacts properly, it shouldn't matter what the order is here.
+	colliders   : [2]^Collider 
 }
 
-CollisionData :: struct {
-	contacts: []Contact,
-	contact_idx: int,
+begin_world :: proc(world: ^World) {
+	world.contact_idx = 0
 }
 
-generate_contacts_for_colliders :: proc(a, b: ^Collider, dst: ^CollisionData) {
+rb_recompute_transform :: proc(rigidbody : ^Rigidbody) {
+	rigidbody._transform = linalg.matrix4_from_quaternion(rigidbody.rotation)
+
+	rigidbody._transform[0, 3] = rigidbody.position[0]
+	rigidbody._transform[1, 3] = rigidbody.position[1]
+	rigidbody._transform[2, 3] = rigidbody.position[2]
+}
+
+generate_contacts_for_colliders :: proc(a, b: ^Collider, dst: ^World) {
 	assert(dst.contact_idx < len(dst.contacts))
 
+	if a.rigidbody == nil {
+		a.rigidbody = &NILL_RIGIDBODY
+		NILL_RIGIDBODY = Rigidbody{}
+	}
+	if b.rigidbody == nil {
+		b.rigidbody = &NILL_RIGIDBODY
+		NILL_RIGIDBODY = Rigidbody{}
+	}
+
 	switch a_shape in a.shape {
-	case Sphere:
+	case SphereShape:
 		switch b_shape in b.shape {
-		case Sphere: generate_contacts_sphere_x_sphere(a, a_shape, b, b_shape, dst)
-		case Plane:  generate_contacts_plane_x_sphere(b, b_shape, a, a_shape, dst)
-		case Box:    generate_contacts_sphere_x_box(a, a_shape, b, b_shape, dst)
+		case SphereShape: generate_contacts_sphere_x_sphere(a, a_shape, b, b_shape, dst)
+		case PlaneShape:  generate_contacts_plane_x_sphere(b, b_shape, a, a_shape, dst)
+		case BoxShape:    generate_contacts_sphere_x_box(a, a_shape, b, b_shape, dst)
 		}
-	case Plane:
+	case PlaneShape:
 		switch b_shape in b.shape {
-		case Plane:  // Uhnandled
-		case Sphere: generate_contacts_plane_x_sphere(a, a_shape, b, b_shape, dst) 
-		case Box:    generate_contacts_plane_x_box(a, a_shape, b, b_shape, dst)
+		case PlaneShape:  // Uhnandled
+		case SphereShape: generate_contacts_plane_x_sphere(a, a_shape, b, b_shape, dst) 
+		case BoxShape:    generate_contacts_plane_x_box(a, a_shape, b, b_shape, dst)
 		}
-	case Box:
+	case BoxShape:
 		switch b_shape in b.shape {
-		case Sphere: generate_contacts_sphere_x_box(b, b_shape, a, a_shape, dst)
-		case Plane:  generate_contacts_plane_x_box(b, b_shape, a, a_shape, dst)
-		case Box:    generate_contacts_box_x_box(a, a_shape, b, b_shape, dst)
+		case SphereShape: generate_contacts_sphere_x_box(b, b_shape, a, a_shape, dst)
+		case PlaneShape:  generate_contacts_plane_x_box(b, b_shape, a, a_shape, dst)
+		case BoxShape:    generate_contacts_box_x_box(a, a_shape, b, b_shape, dst)
 		}
 	}
 
 }
 
 @(private)
-get_next_contact :: proc(dst: ^CollisionData) -> ^Contact {
+get_next_contact :: proc(dst: ^World) -> ^Contact {
 	assert(dst.contact_idx < len(dst.contacts))
 	slot := &dst.contacts[dst.contact_idx]
 	dst.contact_idx += 1
@@ -114,14 +167,19 @@ get_collider_pos :: proc(c: ^Collider) -> Vec3 {
 	// c_pos := linalg.matrix_mul_vector(c.offset, Vec4{0, 0, 0, 0})
 	// c_pos = linalg.matrix_mul_vector(c.body._transform, c_pos)
 	// NOTE: we could be directly reading off the matrix instead.
-	return vec4_to_vec3(c.rigidbody._transform * (c.offset * Vec4{0, 0, 0, 1}))
+
+	return Vec3{
+		c.rigidbody._transform[0, 3],
+		c.rigidbody._transform[1, 3],
+		c.rigidbody._transform[2, 3],
+	}
 }
 
 @(private)
 generate_contacts_sphere_x_sphere :: proc(
-	sphere_a_coll: ^Collider, sphere_a: Sphere,
-	sphere_b_coll: ^Collider, sphere_b: Sphere,
-	dst: ^CollisionData
+	sphere_a_coll: ^Collider, sphere_a: SphereShape,
+	sphere_b_coll: ^Collider, sphere_b: SphereShape,
+	dst: ^World
 ) {
 	a_pos := get_collider_pos(sphere_a_coll)
 	b_pos := get_collider_pos(sphere_b_coll)
@@ -145,9 +203,9 @@ generate_contacts_sphere_x_sphere :: proc(
 // coming from both sides. But I would never want that when I am using it.
 @(private)
 generate_contacts_plane_x_sphere :: proc(
-	plane_coll: ^Collider, plane: Plane,
-	sphere_coll: ^Collider, sphere: Sphere,
-	dst: ^CollisionData
+	plane_coll: ^Collider, plane: PlaneShape,
+	sphere_coll: ^Collider, sphere: SphereShape,
+	dst: ^World
 ) {
 	plane_pos  := get_collider_pos(plane_coll)
 	sphere_pos := get_collider_pos(sphere_coll)
@@ -155,14 +213,15 @@ generate_contacts_plane_x_sphere :: proc(
 	to_sphere := sphere_pos - plane_pos
 	distance  := linalg.dot(plane.normal, to_sphere)
 
-	if distance > sphere.radius {
+	penetration := sphere.radius - distance
+	if penetration < 0 {
 		return
 	}
 
 	contact := get_next_contact(dst)
 	contact.normal       = plane.normal
-	contact.penetration  = sphere.radius - distance
-	contact.position     = sphere_pos + -(sphere.radius - contact.penetration / 2) * contact.normal
+	contact.penetration  = penetration
+	contact.position     = sphere_pos + (-sphere.radius) * contact.normal
 	contact.colliders[0] = plane_coll
 	contact.colliders[1] = sphere_coll
 }
@@ -193,11 +252,11 @@ BOX_EDGES :: [][2]Vec3 {
 	{ {-1, -1, 1}, {-1, -1, -1} },
 }
 
-get_box_half_size_oriented :: proc(box_coll: ^Collider, box: Box) -> Vec3 {
+get_box_half_size_oriented :: proc(box_coll: ^Collider, box: BoxShape) -> Vec3 {
 	return box.half_size * get_box_axes(box_coll, box)
 }
 
-get_box_axes :: proc(box_coll: ^Collider, box: Box) -> Vec3 {
+get_box_axes :: proc(box_coll: ^Collider, box: BoxShape) -> Vec3 {
 	return (
 		get_axis(box_coll.rigidbody._transform, 0) + 
 		get_axis(box_coll.rigidbody._transform, 1) + 
@@ -207,9 +266,9 @@ get_box_axes :: proc(box_coll: ^Collider, box: Box) -> Vec3 {
 
 @(private)
 generate_contacts_plane_x_box :: proc(
-	plane_coll: ^Collider, plane: Plane,
-	box_coll: ^Collider, box: Box,
-	dst: ^CollisionData
+	plane_coll: ^Collider, plane: PlaneShape,
+	box_coll: ^Collider, box: BoxShape,
+	dst: ^World
 ) {
 	plane_pos := get_collider_pos(plane_coll)
 	box_pos := get_collider_pos(box_coll)
@@ -244,10 +303,10 @@ get_collider_axis :: proc(coll: ^Collider, axis: int) -> Vec3 {
 
 @(private)
 generate_contacts_plane_x_vertex :: proc(
-	plane_coll: ^Collider, plane: Plane,
+	plane_coll: ^Collider, plane: PlaneShape,
 	other_coll: ^Collider, vertex: Vec3, 
 	plane_pos: Vec3,
-	dst: ^CollisionData
+	dst: ^World
 ) {
 	to_vertex := vertex - plane_pos
 	distance  := linalg.dot(plane.normal, to_vertex)
@@ -259,9 +318,10 @@ generate_contacts_plane_x_vertex :: proc(
 	contact := get_next_contact(dst)
 	contact.normal       = plane.normal
 	contact.penetration  = -distance
-	contact.position     = vertex + contact.penetration * contact.normal
-	contact.colliders[0] = plane_coll
-	contact.colliders[1] = other_coll
+	// contact.position     = vertex + contact.penetration * contact.normal
+	contact.position     = vertex
+	contact.colliders[0] = other_coll
+	contact.colliders[1] = plane_coll
 }
 
 // NOTE: possibly slow. We may want to cache the inverse too?
@@ -278,9 +338,9 @@ to_world_pos :: proc(transform: Mat4, world: Vec3) -> Vec3 {
 
 @(private)
 generate_contacts_sphere_x_box :: proc(
-	sphere_coll: ^Collider, sphere: Sphere,
-	box_coll: ^Collider, box: Box,
-	dst: ^CollisionData
+	sphere_coll: ^Collider, sphere: SphereShape,
+	box_coll: ^Collider, box: BoxShape,
+	dst: ^World
 ) {
 	sphere_pos := get_collider_pos(sphere_coll)
 	box_pos    := get_collider_pos(box_coll)
@@ -298,8 +358,8 @@ generate_contacts_sphere_x_box :: proc(
 
 // NOTE: sphere_coll may or may not be null here.
 get_contact_sphere_x_box :: proc(
-	sphere_coll: ^Collider, sphere: Sphere, sphere_pos: Vec3,
-	box_coll: ^Collider, box: Box, box_pos: Vec3,
+	sphere_coll: ^Collider, sphere: SphereShape, sphere_pos: Vec3,
+	box_coll: ^Collider, box: BoxShape, box_pos: Vec3,
 ) -> (contact: Contact, ok: bool) {
 	sphere_pos_relative := to_relative_pos(box_coll.rigidbody._transform, sphere_pos)
 
@@ -345,9 +405,9 @@ get_contact_sphere_x_box :: proc(
 
 @(private)
 generate_contacts_box_x_box :: proc(
-	box_a_coll: ^Collider, box_a: Box,
-	box_b_coll: ^Collider, box_b: Box,
-	dst: ^CollisionData
+	box_a_coll: ^Collider, box_a: BoxShape,
+	box_b_coll: ^Collider, box_b: BoxShape,
+	dst: ^World
 ) {
 	box_a_pos := get_collider_pos(box_a_coll)
 	box_b_pos := get_collider_pos(box_b_coll)
@@ -432,8 +492,8 @@ generate_contacts_box_x_box :: proc(
 		// enumerate the points of one cube and the other cube.
 
 		find_max_penetrating_vertex_of_a_into_b :: proc(
-			box_a_coll: ^Collider, box_a: Box, box_a_pos: Vec3,
-			box_b_coll: ^Collider, box_b: Box, box_b_pos: Vec3,
+			box_a_coll: ^Collider, box_a: BoxShape, box_a_pos: Vec3,
+			box_b_coll: ^Collider, box_b: BoxShape, box_b_pos: Vec3,
 			acc: ^ContactAccumulator,
 		) {
 			box_half_size_oriented := get_box_half_size_oriented(box_a_coll, box_a)
@@ -442,7 +502,7 @@ generate_contacts_box_x_box :: proc(
 				vertex := box_a_pos + (box_half_size_oriented * corner)
 
 				contact, ok := get_contact_sphere_x_box(
-					box_a_coll, Sphere{0}, vertex, 
+					box_a_coll, SphereShape{0}, vertex, 
 					box_b_coll, box_b, box_b_pos,
 				)
 				if ok{
@@ -555,8 +615,8 @@ closest_points_between_lines :: proc(P1, P12, P2, P22: Vec3) -> (Vec3, Vec3) {
 
 @(private)
 overlap_on_axis :: proc(
-	box_a_coll: ^Collider, box_a: Box, box_a_pos: Vec3,
-	box_b_coll: ^Collider, box_b: Box, box_b_pos: Vec3,
+	box_a_coll: ^Collider, box_a: BoxShape, box_a_pos: Vec3,
+	box_b_coll: ^Collider, box_b: BoxShape, box_b_pos: Vec3,
 	axis: Vec3,
 ) -> bool {
 	box_a_radius := transform_to_axis(box_a_coll, box_a, box_a_pos, axis)
@@ -570,7 +630,7 @@ overlap_on_axis :: proc(
 
 @(private)
 transform_to_axis :: proc(
-	coll: ^Collider, box: Box, box_pos: Vec3,
+	coll: ^Collider, box: BoxShape, box_pos: Vec3,
 	axis: Vec3
 ) -> f32 {
 	// Gets the 'radius' of the box in a particular axis.
