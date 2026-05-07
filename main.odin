@@ -60,7 +60,7 @@ load_game_state :: proc() -> ^GameState {
 	item^ = Item{
 		size      = {1,1,1},
 		color     = {255, 0, 0, 50},
-		rigidbody = physics.rigidbody(position={0, 0, 0}),
+		rigidbody = physics.rigidbody(position={1.5, 0.5, 0.5}),
 		model     = rl.LoadModelFromMesh(cube_mesh),
 		coll      = physics.collider(&item.rigidbody, physics.BoxShape{ half_size = Vec3{1, 1, 1} / 2 }),
 	}
@@ -246,6 +246,7 @@ draw_text :: proc(x, y: f32, color: Color, font_size: f32, format: string, args:
 
 update_physics :: proc(state: ^GameState, dt: f32) {
 	ground_plane := physics.Collider{
+		offset = linalg.matrix4_translate_f32({0, -0.25, 0}),
 		shape = physics.PlaneShape{ normal = {0, 1, 0 } }
 	}
 

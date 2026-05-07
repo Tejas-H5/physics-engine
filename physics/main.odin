@@ -164,14 +164,10 @@ vec3_to_vec4 :: proc(p: Vec3) -> Vec4 {
 }
 
 get_collider_pos :: proc(c: ^Collider) -> Vec3 {
-	// c_pos := linalg.matrix_mul_vector(c.offset, Vec4{0, 0, 0, 0})
-	// c_pos = linalg.matrix_mul_vector(c.body._transform, c_pos)
-	// NOTE: we could be directly reading off the matrix instead.
-
 	return Vec3{
-		c.rigidbody._transform[0, 3],
-		c.rigidbody._transform[1, 3],
-		c.rigidbody._transform[2, 3],
+		c.rigidbody._transform[0, 3] + c.offset[0, 3],
+		c.rigidbody._transform[1, 3] + c.offset[1, 3],
+		c.rigidbody._transform[2, 3] + c.offset[2, 3],
 	}
 }
 
@@ -395,6 +391,47 @@ get_contact_sphere_x_box :: proc(
 	return 
 }
 
+
+// Almost, but not quite the same as sphere x box
+get_contact_vertex_x_box :: proc(
+	vertex_box_coll: ^Collider, vertex: Vec3, vertex_box_pos: Vec3,
+	box_coll: ^Collider, box: BoxShape, box_pos: Vec3,
+) -> (contact: Contact, ok: bool) {
+	vertex_relative         := to_relative_pos(box_coll.rigidbody._transform, vertex)
+	vertex_box_pos_relative := to_relative_pos(box_coll.rigidbody._transform, vertex_box_pos)
+
+	if abs(vertex_relative.x) > box.half_size.x {return}
+	if abs(vertex_relative.y) > box.half_size.y {return}
+	if abs(vertex_relative.z) > box.half_size.z {return}
+
+	// TODO: The support function that computes the normal should look like
+	//              ^
+	//    \_        |         _/
+	//  <-  \________________/   ->
+	//     _/                \_
+	//    /         |          \
+	//              v 
+
+	closest_point_relative: Vec3
+	closest_point_relative.x = math.clamp(vertex_relative.x, -box.half_size.x, box.half_size.x)
+	closest_point_relative.y = math.clamp(vertex_relative.y, -box.half_size.y, box.half_size.y)
+	closest_point_relative.z = math.clamp(vertex_relative.z, -box.half_size.z, box.half_size.z)	
+
+	closest_point := to_world_pos(box_coll.rigidbody._transform, closest_point_relative)
+
+	to_closest_point := closest_point - vertex
+
+	contact.penetration  = linalg.length(to_closest_point)
+	contact.normal       = to_closest_point / contact.penetration
+	contact.position     = closest_point
+	contact.colliders[0] = vertex_box_coll
+	contact.colliders[1] = box_coll
+
+	ok = true
+	return 
+}
+
+
 // NOTE: though this may be the 'slower' approach, it will be useful for 
 // if we ever decide to optimize this - we simply check if the optimized version is identical to this one.
 // Apparently, all algorithms are either 
@@ -415,51 +452,60 @@ generate_contacts_box_x_box :: proc(
 	// Separating Axes.
 	// If the boxes don't overlap on these 15 axes, then we know for sure that they don't touch
 
-	{
+	has_overlap_on_any_seperating_axis :: proc(
+		box_a_coll: ^Collider, box_a: BoxShape, box_a_pos: Vec3,
+		box_b_coll: ^Collider, box_b: BoxShape, box_b_pos: Vec3,
+	) -> bool {
 		axis_1 := get_collider_axis(box_a_coll, 0)
-		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_1) {return}
+		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_1) {return true}
 
 		axis_2 := get_collider_axis(box_a_coll, 1)
-		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_2) {return}
+		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_2) {return true}
 
 		axis_3 := get_collider_axis(box_a_coll, 2)
-		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_3) {return}
+		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_3) {return true}
 
 		axis_4 := get_collider_axis(box_b_coll, 0)
-		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_4) {return}
+		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_4) {return true}
 
 		axis_5 := get_collider_axis(box_b_coll, 1)
-		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_5) {return}
+		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_5) {return true}
 
 		axis_6 := get_collider_axis(box_b_coll, 2)
-		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_6) {return}
+		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_6) {return true}
 
 		axis_7 := linalg.cross(axis_1, axis_4)
-		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_7) {return}
+		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_7) {return true}
 
 		axis_8 := linalg.cross(axis_1, axis_5)
-		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_8) {return}
+		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_8) {return true}
 
 		axis_9 := linalg.cross(axis_1, axis_6)
-		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_9) {return}
+		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_9) {return true}
 
 		axis_10 := linalg.cross(axis_2, axis_4)
-		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_10) {return}
+		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_10) {return true}
 
 		axis_11 := linalg.cross(axis_2, axis_5)
-		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_11) {return}
+		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_11) {return true}
 
 		axis_12 := linalg.cross(axis_2, axis_6)
-		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_12) {return}
+		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_12) {return true}
 
 		axis_13 := linalg.cross(axis_3, axis_4)
-		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_13) {return}
+		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_13) {return true}
 
 		axis_14 := linalg.cross(axis_3, axis_5)
-		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_14) {return}
+		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_14) {return true}
 
 		axis_15 := linalg.cross(axis_3, axis_6)
-		if !overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_15) {return}
+		if overlap_on_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos, axis_15) {return true}
+
+		return false
+	}
+
+	if !has_overlap_on_any_seperating_axis(box_a_coll, box_a, box_a_pos, box_b_coll, box_b, box_b_pos) {
+		return
 	}
 
 	// NOTE: I didn't really understand the caching algorithm or whatever that was mentioned in the book.
@@ -501,11 +547,11 @@ generate_contacts_box_x_box :: proc(
 			for &corner in BOX_CORNERS {
 				vertex := box_a_pos + (box_half_size_oriented * corner)
 
-				contact, ok := get_contact_sphere_x_box(
-					box_a_coll, SphereShape{0}, vertex, 
+				contact, ok := get_contact_vertex_x_box(
+					box_a_coll, vertex, box_a_pos, 
 					box_b_coll, box_b, box_b_pos,
 				)
-				if ok{
+				if ok {
 					push_contact(acc, contact)
 				}
 			}
