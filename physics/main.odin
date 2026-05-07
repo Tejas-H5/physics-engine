@@ -411,6 +411,16 @@ get_contact_vertex_x_box :: proc(
 	vertex_relative         := to_relative_pos(box_coll.rigidbody._transform, vertex)
 	vertex_box_pos_relative := to_relative_pos(box_coll.rigidbody._transform, vertex_box_pos)
 
+	// The support function that computes the normal should look like this:
+	//              ^
+	//    \_        |         _/
+	//  <-  \________________/   ->
+	//     _/                \_
+	//    /         |         \
+	//              v
+	//
+	// In this way, the collision handling remains the same at the cornersr regardless of how th ebox was stretched.
+
 	x_dist := box.half_size.x - abs(vertex_relative.x)
 	y_dist := box.half_size.y - abs(vertex_relative.y)
 	z_dist := box.half_size.z - abs(vertex_relative.z)
