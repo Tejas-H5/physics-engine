@@ -155,12 +155,12 @@ get_next_contact :: proc(dst: ^World) -> ^Contact {
 
 // Homegenous coordinates to position, assuming h.w == 1
 vec4_to_vec3 :: proc(h: Vec4) -> Vec3 {
-	return Vec3{h.x, h.y, h.x}
+	return Vec3{h.x, h.y, h.z}
 }
 
 // Position to homegenous coordinates, h.w == 1
 vec3_to_vec4 :: proc(p: Vec3) -> Vec4 {
-	return Vec4{p.x, p.y, p.x, 1}
+	return Vec4{p.x, p.y, p.z, 1}
 }
 
 get_collider_pos :: proc(c: ^Collider) -> Vec3 {

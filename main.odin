@@ -53,9 +53,9 @@ load_game_state :: proc() -> ^GameState {
 	cube_mesh := rl.GenMeshCube(1, 1, 1)
 	sphere_mesh := rl.GenMeshSphere(0.5, 64, 64)
 
-	state.items = make([]Item, 2)
+	state.items = make([]Item, 4)
 
-	// Cube
+	// Cubes
 	item := &state.items[0]
 	item^ = Item{
 		size      = {1,1,1},
@@ -65,13 +65,31 @@ load_game_state :: proc() -> ^GameState {
 		coll      = physics.collider(&item.rigidbody, physics.BoxShape{ half_size = Vec3{1, 1, 1} / 2 }),
 	}
 
-	// Sphere
-
 	item = &state.items[1]
 	item^ = Item{
 		size      = {1,1,1},
 		color     = {255, 0, 0, 50},
 		rigidbody = physics.rigidbody(position={2, 0, 0}),
+		model     = rl.LoadModelFromMesh(cube_mesh),
+		coll      = physics.collider(&item.rigidbody, physics.BoxShape{ half_size = Vec3{1, 1, 1} / 2 }),
+	}
+
+	// Sphere
+
+	item = &state.items[2]
+	item^ = Item{
+		size      = {1,1,1},
+		color     = {255, 0, 0, 50},
+		rigidbody = physics.rigidbody(position={4, 0, 0}),
+		model     = rl.LoadModelFromMesh(sphere_mesh),
+		coll      = physics.collider(&item.rigidbody, physics.SphereShape{ radius = 0.5 }),
+	}
+
+	item = &state.items[3]
+	item^ = Item{
+		size      = {1,1,1},
+		color     = {255, 0, 0, 50},
+		rigidbody = physics.rigidbody(position={6, 0, 0}),
 		model     = rl.LoadModelFromMesh(sphere_mesh),
 		coll      = physics.collider(&item.rigidbody, physics.SphereShape{ radius = 0.5 }),
 	}
@@ -237,14 +255,24 @@ update_physics :: proc(state: ^GameState, dt: f32) {
 		physics.rb_recompute_transform(&item.rigidbody)
 	}
 
+	// Collide everything with the ground
 	for &item in state.items {
 		physics.generate_contacts_for_colliders(&ground_plane, &item.coll, &state.world)
 	}
 
-	for idx in 0..<state.world.contact_idx {
-		contact := &state.world.contacts[idx]
-		if contact.colliders[0].rigidbody != nil {
-			contact.colliders[0].rigidbody.position += contact.normal * contact.penetration * dt * 0.1
+	// Collide everything with everything else
+	for i in 0..<len(state.items) {
+		for j in i+1..<len(state.items) {
+			item1 := &state.items[i]
+			item2 := &state.items[j]
+			physics.generate_contacts_for_colliders(&item1.coll, &item2.coll, &state.world)
 		}
 	}
+
+	// for idx in 0..<state.world.contact_idx {
+	// 	contact := &state.world.contacts[idx]
+	// 	if contact.colliders[0].rigidbody != nil {
+	// 		contact.colliders[0].rigidbody.position += contact.normal * contact.penetration * dt * 0.1
+	// 	}
+	// }
 }
