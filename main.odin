@@ -134,7 +134,7 @@ main :: proc() {
 
 x_angle := f32(0)
 y_angle := f32(0)
-zoom := f32(2)
+zoom := f32(1.5)
 
 run_game :: proc(state: ^GameState) {
 	rl.BeginDrawing(); 
@@ -271,10 +271,10 @@ update_physics :: proc(state: ^GameState, dt: f32) {
 		}
 	}
 
-	// for idx in 0..<state.world.contact_idx {
-	// 	contact := &state.world.contacts[idx]
-	// 	if contact.colliders[0].rigidbody != nil {
-	// 		contact.colliders[0].rigidbody.position += contact.normal * contact.penetration * dt * 0.1
-	// 	}
-	// }
+	for idx in 0..<state.world.contact_idx {
+		contact := &state.world.contacts[idx]
+		if contact.colliders[0].rigidbody != nil {
+			contact.colliders[0].rigidbody.position += contact.normal * contact.penetration * dt * 0.5
+		}
+	}
 }

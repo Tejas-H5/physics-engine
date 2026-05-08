@@ -546,9 +546,10 @@ generate_contacts_box_x_box :: proc(
 	// NOTE: I didn't really understand the caching algorithm or whatever that was mentioned in the book.
 	// Instead, I've assumed via intuition that we can have at max 4 valid contacts at a time.
 	// Instead of caching, I'll just keep track of the 4 contacts with the largest penetration and push those. 
+	// Or maybe it's 8, or something. whatever.
 
 	ContactAccumulator :: struct{
-		max_contacts: [4]Contact,
+		max_contacts: [8]Contact,
 		min_idx : int,
 	}
 
@@ -568,7 +569,7 @@ generate_contacts_box_x_box :: proc(
 	}
 
 	// Point x Face
-	{
+	if false {
 		// TODO: we may want a more specific function here.
 		// enumerate the points of one cube and the other cube.
 
@@ -618,33 +619,35 @@ generate_contacts_box_x_box :: proc(
 		box_b_half_size_oriented := box_b.half_size * box_b_axes
 
 		// aw hell naww
-		for edge in BOX_EDGES {
-			a_v1 := box_a_pos + box_a_half_size_oriented * edge[0]
-			a_v2 := box_a_pos + box_a_half_size_oriented * edge[1]
+		for edge_a in BOX_EDGES {
+			for edge_b in BOX_EDGES {
+				a_v1 := box_a_pos + box_a_half_size_oriented * edge_a[0]
+				a_v2 := box_a_pos + box_a_half_size_oriented * edge_a[1]
 
-			for edge in BOX_EDGES {
-				b_v1 := box_b_pos + box_b_half_size_oriented * edge[0]
-				b_v2 := box_b_pos + box_b_half_size_oriented * edge[1]
+				b_v1 := box_b_pos + box_b_half_size_oriented * edge_b[0]
+				b_v2 := box_b_pos + box_b_half_size_oriented * edge_b[1]
 
-				a, b := closest_points_between_lines(a_v1, a_v2, b_v1, b_v2)
-				a_to_b := b - a
+				a, ta, b, tb, are_parallel := closest_points_between_lines(a_v1, a_v2, b_v1, b_v2)
+				if !are_parallel && 0 <= ta && ta <= 1 && 0 <= tb && tb <= 1 {
+					// Check point b is closer to box a's center than point a, and vice versa
+					if linalg.length2(b - box_a_pos) < linalg.length2(a - box_a_pos) {
+						if linalg.length2(a - box_b_pos) < linalg.length2(b - box_b_pos) {
+							// TODO: - check if I need to generate 2 contacts actually.
+							// Or maybe the physics engine should know to apply 2 forces?
 
-				// Check point b is closer to box a's center than point a
-				if linalg.length2(b - box_a_pos) < linalg.length2(a - box_a_pos) {
-					penetration := linalg.length(a_to_b)
+							// The position of the contact in world coordinates.
+							// When both bodies are specified, it is only mid-way between the inter-penetrating points
 
-					// TODO: - check if I need to generate 2 contacts actually.
-					// Or maybe the physics engine should know to apply 2 forces?
-
-					// The position of the contact in world coordinates.
-					// When both bodies are specified, it is only mid-way between the inter-penetrating points
-
-					push_contact(&acc, Contact{
-						position    = a,
-						penetration = penetration,
-						normal      = a_to_b / penetration,
-						colliders   = {box_a_coll, box_b_coll},
-					})
+							a_to_b := b - a
+							penetration := linalg.length(a_to_b)
+							push_contact(&acc, Contact{
+								position    = a,
+								penetration = penetration,
+								normal      = a_to_b / penetration,
+								colliders   = {box_a_coll, box_a_coll},
+							})
+						}
+					}
 				}
 			}
 		}
@@ -659,38 +662,38 @@ generate_contacts_box_x_box :: proc(
 }
 
 // Finds the closest points between two infinite 3D lines.
-// L1 = P1 + t1*V1
-// L2 = P2 + t2*V2
-// NOTE: this was a python snippet I copy pasted. It was surprisingly easy to convert
-closest_points_between_lines :: proc(P1, P12, P2, P22: Vec3) -> (Vec3, Vec3) {
-	V1 := P12 - P1
-	V2 := P22 - P2
+// It's a copypaste of https://paulbourke.net/geometry/pointlineplane/lineline.c
+closest_points_between_lines :: proc(p1, p2, p3, p4: Vec3) -> (pa: Vec3, ta: f32, pb: Vec3, tb: f32, are_parallel: bool) {
+	p13 := p1 - p3
+	p43 := p4 - p3
 
-    // Vector between line starting points
-	w0 := P1 - P2
+	EPS :: 0.000001
 
-    a := linalg.dot(V1, V1)
-    b := linalg.dot(V1, V2)
-    c := linalg.dot(V2, V2)
-    d := linalg.dot(V1, w0)
-    e := linalg.dot(V2, w0)
+	if abs(p43.x) > EPS || abs(p43.y) > EPS || abs(p43.z) > EPS {
+		p21 := p2 - p1
+		if abs(p21.x) > EPS || abs(p21.y) > EPS || abs(p21.z) > EPS {
+			d1343 := p13.x * p43.x + p13.y * p43.y + p13.z * p43.z;
+			d4321 := p43.x * p21.x + p43.y * p21.y + p43.z * p21.z;
+			d1321 := p13.x * p21.x + p13.y * p21.y + p13.z * p21.z;
+			d4343 := p43.x * p43.x + p43.y * p43.y + p43.z * p43.z;
+			d2121 := p21.x * p21.x + p21.y * p21.y + p21.z * p21.z;
 
-    denom := a * c - b * b
+			denom := d2121 * d4343 - d4321 * d4321;
+			if (abs(denom) > EPS) {
+				numer := d1343 * d4321 - d1321 * d4343;
 
-    // Check if lines are parallel (denominator close to zero)
-	t1, t2: f32
-    if denom < 1e-6 {
-		t1 = 0
-        t2 = d / b if b != 0 else 0
-	} else {
-		t1 = (b * e - c * d) / denom
-        t2 = (a * e - b * d) / denom
+				ta = numer / denom;
+				tb = (d1343 + d4321 * (ta)) / d4343;
+
+				pa = p1 + ta * p21
+				pb = p3 + tb * p43
+
+				are_parallel = false
+			}
+		}
 	}
 
-	closest_point_on_L1 := P1 + t1 * V1
-    closest_point_on_L2 := P2 + t2 * V2
-
-    return closest_point_on_L1, closest_point_on_L2
+	return
 }
 
 
