@@ -220,6 +220,11 @@ run_game :: proc(state: ^GameState) {
 				rl.DrawLine3D(contact.position, contact.position + contact.penetration * contact.normal, Color{255, 0, 0, 255})
 				rl.DrawSphere(contact.position, 0.05, Color{255, 0, 0, 255})
 			}
+
+			basis := physics.make_orthonormal_basis(linalg.normalize0(player.rigidbody.position))
+			rl.DrawLine3D({0, 0, 0}, basis * Vec3{10, 0, 0}, {0, 0, 255, 255})
+			rl.DrawLine3D({0, 0, 0}, basis * Vec3{0, 10, 0}, {0, 0, 255, 055})
+			rl.DrawLine3D({0, 0, 0}, basis * Vec3{0, 0, 10}, {0, 0, 255, 055})
 		}
 
 		// UI 

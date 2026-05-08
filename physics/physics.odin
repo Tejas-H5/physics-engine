@@ -87,6 +87,9 @@ BoxShape :: struct {
 	half_size : Vec3,
 }
 
+// TODO: Mesh collider. 
+// With this done, we can make literally anything.
+
 Contact :: struct {
 	// The position of the contact in world coordinates.
 	// When both bodies are specified, it is only mid-way between the inter-penetrating points
@@ -333,7 +336,6 @@ generate_contacts_plane_x_vertex :: proc(
 	contact.colliders[1] = plane_coll
 }
 
-// NOTE: possibly slow. We may want to cache the inverse too?
 coll_relative_pos :: proc(coll: ^Collider, world: Vec3) -> Vec3 {
 	return mat4_mul_vec3(coll._transform_inverse, world)
 }
@@ -738,3 +740,48 @@ transform_to_axis :: proc(
 		box.half_size.z * z_amount
 	)
 }
+
+
+make_orthonormal_basis :: proc(x_axis: Vec3) -> Mat3 {
+	normal, tangent2, tangent1: Vec3
+	normal = x_axis
+
+	// Use projecting to a plane and -y/x trick to get a perpendicular vector.
+	if abs(normal.x) > abs(normal.y) {
+		// Were' nearer the X axis, so use the Y axis
+
+		scale_factor := 1 / linalg.sqrt(normal.z * normal.z + normal.x * normal.x)
+		tangent1 = {normal.z * scale_factor, 0, -normal.x * scale_factor}
+
+
+		// The new Y axis is at right angles to the new X and Z axes
+		// NOTE: This is just a cross product, but z.y terms are 0
+		tangent2 = {
+			normal.y * tangent1.x,
+			normal.z * tangent1.x - normal.x * tangent1.z,
+			-normal.y * tangent1.x
+		}
+	} else {
+		// We're nearer the Y axis, so use the X axis
+
+		scale_factor := 1 / linalg.sqrt(normal.z * normal.z + normal.y * normal.y)
+		tangent1 = {0, -normal.z * scale_factor, normal.y * scale_factor }
+
+		// The new Y axis is at right angles to the new X and Z axes
+		// NOTE: This is just a cross product, but z.x terms are 0
+		tangent2 = {
+			normal.y * tangent1.z - normal.z * tangent1.y,
+			-normal.x * tangent1.z,
+			normal.x * tangent1.y,
+		}
+	}
+
+	mat : Mat3
+	mat[0] = normal
+	mat[1] = tangent1
+	mat[2] = tangent2
+	return mat
+}
+
+
+
