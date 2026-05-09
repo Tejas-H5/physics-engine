@@ -1,131 +1,20 @@
+// Mainly contact-generation/collision related code here
+
 package physics
 
 import "core:math"
 import "core:math/linalg"
-import rl "vendor:raylib"
 
-Vec3  :: linalg.Vector3f32
-Vec4  :: linalg.Vector4f32
-Quat  :: linalg.Quaternionf32
-Mat4  :: linalg.Matrix4f32
-Mat3  :: linalg.Matrix3f32
-Color :: rl.Color
-
-
-// Created while reading Ian Millington - Game Physics-Engine Development. Actually amazing book.
-// However I have opted to use inbuilt odin stuff where possible, and a procedural style instead of OOP.
-// We may actually be slower! TODO: elaborate
-
-World :: struct {
-	contacts    : []Contact,
-	contact_idx : int,
+@(private)
+get_next_contact :: proc(dst: ^World) -> ^Contact {
+	assert(dst.contact_idx < len(dst.contacts))
+	slot := &dst.contacts[dst.contact_idx]
+	dst.contact_idx += 1
+	return slot
 }
 
-make_world :: proc(max_num_contacts: int) -> World {
-	return World {
-		contacts = make([]Contact, max_num_contacts),
-	}
-}
-
-delete_world :: proc(world: ^World) {
-	delete(world.contacts)
-}
-
-Rigidbody :: struct {
-	position : Vec3,
-	rotation : Quat,
-	inertia_tensor : Mat3,
-
-	// Derived data
-
-	_transform, _transform_inverse : Mat4,
-}
-
-rigidbody :: proc(position := Vec3{0, 0, 0}, rotation := linalg.QUATERNIONF32_IDENTITY) -> Rigidbody {
-	return {
-		position = position,
-		rotation = rotation,
-	}
-}
-
-// TODO: consider not using rodata
-NILL_RIGIDBODY := Rigidbody{}
-
-Collider :: struct {
-	rigidbody : ^Rigidbody,
-	shape     : ColliderShape,
-	local_offset    : Mat4,
-
-	_transform, _transform_inverse : Mat4, 
-}
-
-ColliderShape :: union {
-	SphereShape, 
-	PlaneShape,
-	BoxShape,
-}
-
-collider :: proc(rb: ^Rigidbody, shape: ColliderShape, offset := linalg.MATRIX4F32_IDENTITY) -> Collider {
-	return Collider {
-		rigidbody    = rb,
-		local_offset = offset,
-		shape        = shape,
-	}
-}
-
-
-// A real sphere would have a position. This is merely a shape.
-SphereShape :: struct {
-	radius: f32,
-}
-
-PlaneShape :: struct {
-	normal: Vec3,
-}
-
-BoxShape :: struct {
-	half_size : Vec3,
-}
-
-// TODO: Mesh collider. 
-// With this done, we can make literally anything.
-
-Contact :: struct {
-	// The position of the contact in world coordinates.
-	// When both bodies are specified, it is only mid-way between the inter-penetrating points
-	position    : Vec3,
-	// The normal of the contact in world coordinates
-	normal      : Vec3,
-	// The depth of penetration
-	penetration : f32,
-
-	// If you're resolving contacts properly, it shouldn't matter what the order is here.
-	colliders   : [2]^Collider 
-}
-
-begin_world :: proc(world: ^World) {
-	world.contact_idx = 0
-}
-
-// TODO: consider doing this lazily
-rb_recompute_transform :: proc(rigidbody : ^Rigidbody) {
-	rigidbody._transform = linalg.matrix4_from_quaternion(rigidbody.rotation)
-
-	rigidbody._transform[0, 3] = rigidbody.position[0]
-	rigidbody._transform[1, 3] = rigidbody.position[1]
-	rigidbody._transform[2, 3] = rigidbody.position[2]
-
-	rigidbody._transform_inverse = linalg.matrix4_inverse(rigidbody._transform)
-}
-
-coll_recompute_transform :: proc(coll: ^Collider) {
-	if coll.rigidbody == nil {
-		coll._transform = coll.local_offset
-	} else {
-		coll._transform = coll.rigidbody._transform * coll.local_offset
-	}
-
-	coll._transform_inverse = linalg.matrix4_inverse(coll._transform)
+clear_contacts :: proc(w: ^World) {
+	w.contact_idx = 0
 }
 
 generate_contacts_for_colliders :: proc(a, b: ^Collider, dst: ^World) {
@@ -163,27 +52,6 @@ generate_contacts_for_colliders :: proc(a, b: ^Collider, dst: ^World) {
 
 }
 
-@(private)
-get_next_contact :: proc(dst: ^World) -> ^Contact {
-	assert(dst.contact_idx < len(dst.contacts))
-	slot := &dst.contacts[dst.contact_idx]
-	dst.contact_idx += 1
-	return slot
-}
-
-// Homegenous coordinates to position, assuming h.w == 1
-vec4_to_vec3 :: proc(h: Vec4) -> Vec3 {
-	return Vec3{h.x, h.y, h.z}
-}
-
-// Position to homegenous coordinates, h.w == 1
-vec3_to_vec4 :: proc(p: Vec3) -> Vec4 {
-	return Vec4{p.x, p.y, p.z, 1}
-}
-
-get_collider_pos :: proc(c: ^Collider) -> Vec3 {
-	return get_axis(c._transform, 3)
-}
 
 @(private)
 generate_contacts_sphere_x_sphere :: proc(
@@ -191,8 +59,8 @@ generate_contacts_sphere_x_sphere :: proc(
 	sphere_b_coll: ^Collider, sphere_b: SphereShape,
 	dst: ^World
 ) {
-	a_pos := get_collider_pos(sphere_a_coll)
-	b_pos := get_collider_pos(sphere_b_coll)
+	a_pos := collider_position(sphere_a_coll)
+	b_pos := collider_position(sphere_b_coll)
 
 	midline := b_pos - a_pos
 	size    := linalg.length(midline)
@@ -204,9 +72,11 @@ generate_contacts_sphere_x_sphere :: proc(
 
 	contact.normal      = midline / size
 	contact.penetration = sphere_a.radius + sphere_b.radius - size
+
+	// TODO: review
 	contact.position    = a_pos + (sphere_a.radius - contact.penetration / 0.5) * contact.normal
-	contact.colliders[0] = sphere_a_coll
-	contact.colliders[1] = sphere_b_coll
+	contact.collider        = sphere_a_coll
+	contact.other_collider  = sphere_b_coll
 }
 
 // Technically - its a half space and not a plane :D - A 'real' plane handles collisions 
@@ -217,8 +87,8 @@ generate_contacts_plane_x_sphere :: proc(
 	sphere_coll: ^Collider, sphere: SphereShape,
 	dst: ^World
 ) {
-	plane_pos  := get_collider_pos(plane_coll)
-	sphere_pos := get_collider_pos(sphere_coll)
+	plane_pos  := collider_position(plane_coll)
+	sphere_pos := collider_position(sphere_coll)
 
 	to_sphere := sphere_pos - plane_pos
 	distance  := linalg.dot(plane.normal, to_sphere)
@@ -232,85 +102,8 @@ generate_contacts_plane_x_sphere :: proc(
 	contact.normal       = plane.normal
 	contact.penetration  = penetration
 	contact.position     = sphere_pos + (-sphere.radius) * contact.normal
-	contact.colliders[0] = plane_coll
-	contact.colliders[1] = sphere_coll
-}
-
-BOX_CORNERS :: []Vec3{
-	{1,1,1},
-	{1,1,-1},
-	{1,-1,1},
-	{1,-1,-1},
-	{-1,1,1},
-	{-1,1,-1},
-	{-1,-1,1},
-	{-1,-1,-1},
-}
-
-BOX_EDGES :: [][2]Vec3 {
-	{ {1, 1, 1}, {-1, 1, 1} },
-	{ {1, 1, 1}, {1, -1, 1} },
-	{ {1, 1, 1}, {1, 1, -1} },
-	{ {1, 1, -1}, {-1, 1, -1} },
-	{ {1, 1, -1}, {1, -1, -1} },
-	{ {1, -1, 1}, {-1, -1, 1} },
-	{ {1, -1, 1}, {1, -1, -1} },
-	{ {1, -1, -1}, {-1, -1, -1} },
-	{ {-1, 1, 1}, {-1, -1, 1} },
-	{ {-1, 1, 1}, {-1, 1, -1} },
-	{ {-1, 1, -1}, {-1, -1, -1} },
-	{ {-1, -1, 1}, {-1, -1, -1} },
-}
-
-get_box_half_size_oriented :: proc(box_coll: ^Collider, box: BoxShape) -> Vec3 {
-	return box.half_size * get_box_axes(box_coll, box)
-}
-
-get_box_axes :: proc(box_coll: ^Collider, box: BoxShape) -> Vec3 {
-	return (
-		get_collider_axis(box_coll, 0) + 
-		get_collider_axis(box_coll, 1) + 
-		get_collider_axis(box_coll, 2)
-	)
-}
-
-@(private)
-generate_contacts_plane_x_box :: proc(
-	plane_coll: ^Collider, plane: PlaneShape,
-	box_coll: ^Collider, box: BoxShape,
-	dst: ^World
-) {
-	plane_pos := get_collider_pos(plane_coll)
-	box_pos := get_collider_pos(box_coll)
-
-	box_half_size_oriented := get_box_half_size_oriented(box_coll, box)
-
-	for &corner in BOX_CORNERS {
-		if dst.contact_idx >= len(dst.contacts) {break}
-
-		// TODO: Is it faster to unroll?
-		vertex := box_pos + (box_half_size_oriented * corner)
-		generate_contacts_plane_x_vertex(plane_coll, plane, box_coll, vertex, plane_pos, dst)
-	}
-}
-
-/*
-Getting column 1, 2, or 3 of a matrix should be equivelant to doing
-M*Vec3{1, 0, 0}, M*Vec3{0, 1, 0}, M*Vec3{0, 0, 1}, respectively.
-Getting column 4 is equivelant to getting the translation component.
-*/
-get_axis :: proc(mat: Mat4, axis: int) -> Vec3 #no_bounds_check {
-	return Vec3{
-		mat[0, axis],
-		mat[1, axis],
-		mat[2, axis],
-	}
-}
-
-// NOTE: Assumes collider itself was not also transformed.
-// TODO: Each collider might need it's own matrix pairs.
-get_collider_axis :: proc(coll: ^Collider, axis: int) -> Vec3 {
-	return get_axis(coll._transform, axis)
+	contact.collider         = sphere_coll
+	contact.other_collider   = plane_coll
 }
 
 @(private)
@@ -332,29 +125,8 @@ generate_contacts_plane_x_vertex :: proc(
 	contact.penetration  = -distance
 	// contact.position     = vertex + contact.penetration * contact.normal
 	contact.position     = vertex
-	contact.colliders[0] = other_coll
-	contact.colliders[1] = plane_coll
-}
-
-coll_relative_pos :: proc(coll: ^Collider, world: Vec3) -> Vec3 {
-	return mat4_mul_vec3(coll._transform_inverse, world)
-}
-
-coll_world_pos :: proc(coll: ^Collider, relative: Vec3) -> Vec3 {
-	return mat4_mul_vec3(coll._transform, relative)
-}
-
-rb_relative_pos :: proc(rigidbody: ^Rigidbody, world: Vec3) -> Vec3 {
-	return mat4_mul_vec3(rigidbody._transform_inverse, world)
-}
-
-rb_world_pos :: proc(rigidbody: ^Rigidbody, relative: Vec3) -> Vec3 {
-	return mat4_mul_vec3(rigidbody._transform, relative)
-}
-
-mat4_mul_vec3 :: proc(mat: Mat4, vec: Vec3) -> Vec3 {
-	result := mat * vec3_to_vec4(vec)
-	return vec4_to_vec3(result)
+	contact.collider         = other_coll
+	contact.other_collider   = plane_coll
 }
 
 @(private)
@@ -363,8 +135,8 @@ generate_contacts_sphere_x_box :: proc(
 	box_coll: ^Collider, box: BoxShape,
 	dst: ^World
 ) {
-	sphere_pos := get_collider_pos(sphere_coll)
-	box_pos    := get_collider_pos(box_coll)
+	sphere_pos := collider_position(sphere_coll)
+	box_pos    := collider_position(box_coll)
 
 	contact, ok := get_contact_sphere_x_box(
 		sphere_coll, sphere, sphere_pos,
@@ -382,7 +154,7 @@ get_contact_sphere_x_box :: proc(
 	sphere_coll: ^Collider, sphere: SphereShape, sphere_pos: Vec3,
 	box_coll: ^Collider, box: BoxShape, box_pos: Vec3,
 ) -> (contact: Contact, ok: bool) {
-	sphere_pos_relative := coll_relative_pos(box_coll, sphere_pos)
+	sphere_pos_relative := collider_relative_pos(box_coll, sphere_pos)
 
 	if abs(sphere_pos_relative.x) - box.half_size.x > sphere.radius {return}
 	if abs(sphere_pos_relative.y) - box.half_size.y > sphere.radius {return}
@@ -401,7 +173,7 @@ get_contact_sphere_x_box :: proc(
 		return
 	}
 
-	closest_point := coll_world_pos(box_coll, closest_point_relative)
+	closest_point := collider_world_pos(box_coll, closest_point_relative)
 
 	to_sphere := sphere_pos - closest_point
 	normal    := linalg.normalize(to_sphere)
@@ -409,8 +181,8 @@ get_contact_sphere_x_box :: proc(
 	contact.normal       = normal 
 	contact.penetration  = sphere.radius - math.sqrt(dist_squared)
 	contact.position     = closest_point
-	contact.colliders[0] = sphere_coll
-	contact.colliders[1] = box_coll
+	contact.collider       = sphere_coll
+	contact.other_collider = box_coll
 
 	ok = true
 	return 
@@ -421,8 +193,8 @@ get_contact_vertex_x_box :: proc(
 	vertex_box_coll: ^Collider, vertex: Vec3, vertex_box_pos: Vec3,
 	box_coll: ^Collider, box: BoxShape, box_pos: Vec3,
 ) -> (contact: Contact, ok: bool) {
-	vertex_relative         := coll_relative_pos(box_coll, vertex)
-	vertex_box_pos_relative := coll_relative_pos(box_coll, vertex_box_pos)
+	vertex_relative         := collider_relative_pos(box_coll, vertex)
+	vertex_box_pos_relative := collider_relative_pos(box_coll, vertex_box_pos)
 
 	// Opinion 1: The support function that computes the normal should look like this:
 	//              ^
@@ -455,19 +227,18 @@ get_contact_vertex_x_box :: proc(
 		closest_point_relative.z = math.sign(vertex_relative.z) * box.half_size.z
 	}
 
-	closest_point := coll_world_pos(box_coll, closest_point_relative)
+	closest_point := collider_world_pos(box_coll, closest_point_relative)
 	to_closest_point := closest_point - vertex
 
 	contact.penetration  = linalg.length(to_closest_point)
 	contact.normal       = to_closest_point / contact.penetration
 	contact.position     = vertex
-	contact.colliders[0] = vertex_box_coll
-	contact.colliders[1] = box_coll
+	contact.collider = vertex_box_coll
+	contact.other_collider = box_coll
 
 	ok = true
 	return 
 }
-
 
 // NOTE: though this may be the 'slower' approach, it will be useful for 
 // if we ever decide to optimize this - we simply check if the optimized version is identical to this one.
@@ -483,8 +254,8 @@ generate_contacts_box_x_box :: proc(
 	box_b_coll: ^Collider, box_b: BoxShape,
 	dst: ^World
 ) {
-	box_a_pos := get_collider_pos(box_a_coll)
-	box_b_pos := get_collider_pos(box_b_coll)
+	box_a_pos := collider_position(box_a_coll)
+	box_b_pos := collider_position(box_b_coll)
 
 	// Separating Axes.
 	// If the boxes don't overlap on these 15 axes, then we know for sure that they don't touch
@@ -646,7 +417,8 @@ generate_contacts_box_x_box :: proc(
 								position    = a,
 								penetration = penetration,
 								normal      = a_to_b / penetration,
-								colliders   = {box_a_coll, box_a_coll},
+								collider        = box_a_coll,
+								other_collider  = box_b_coll,
 							})
 						}
 					}
@@ -663,41 +435,26 @@ generate_contacts_box_x_box :: proc(
 	}
 }
 
-// Finds the closest points between two infinite 3D lines.
-// It's a copypaste of https://paulbourke.net/geometry/pointlineplane/lineline.c
-closest_points_between_lines :: proc(p1, p2, p3, p4: Vec3) -> (pa: Vec3, ta: f32, pb: Vec3, tb: f32, are_parallel: bool) {
-	p13 := p1 - p3
-	p43 := p4 - p3
 
-	EPS :: 0.000001
+@(private)
+generate_contacts_plane_x_box :: proc(
+	plane_coll: ^Collider, plane: PlaneShape,
+	box_coll: ^Collider, box: BoxShape,
+	dst: ^World
+) {
+	plane_pos := collider_position(plane_coll)
+	box_pos := collider_position(box_coll)
 
-	if abs(p43.x) > EPS || abs(p43.y) > EPS || abs(p43.z) > EPS {
-		p21 := p2 - p1
-		if abs(p21.x) > EPS || abs(p21.y) > EPS || abs(p21.z) > EPS {
-			d1343 := p13.x * p43.x + p13.y * p43.y + p13.z * p43.z;
-			d4321 := p43.x * p21.x + p43.y * p21.y + p43.z * p21.z;
-			d1321 := p13.x * p21.x + p13.y * p21.y + p13.z * p21.z;
-			d4343 := p43.x * p43.x + p43.y * p43.y + p43.z * p43.z;
-			d2121 := p21.x * p21.x + p21.y * p21.y + p21.z * p21.z;
+	box_half_size_oriented := get_box_half_size_oriented(box_coll, box)
 
-			denom := d2121 * d4343 - d4321 * d4321;
-			if (abs(denom) > EPS) {
-				numer := d1343 * d4321 - d1321 * d4343;
+	for &corner in BOX_CORNERS {
+		if dst.contact_idx >= len(dst.contacts) {break}
 
-				ta = numer / denom;
-				tb = (d1343 + d4321 * (ta)) / d4343;
-
-				pa = p1 + ta * p21
-				pb = p3 + tb * p43
-
-				are_parallel = false
-			}
-		}
+		// TODO: Is it faster to unroll?
+		vertex := box_pos + (box_half_size_oriented * corner)
+		generate_contacts_plane_x_vertex(plane_coll, plane, box_coll, vertex, plane_pos, dst)
 	}
-
-	return
 }
-
 
 @(private)
 overlap_on_axis :: proc(
@@ -740,48 +497,4 @@ transform_to_axis :: proc(
 		box.half_size.z * z_amount
 	)
 }
-
-
-make_orthonormal_basis :: proc(x_axis: Vec3) -> Mat3 {
-	normal, tangent2, tangent1: Vec3
-	normal = x_axis
-
-	// Use projecting to a plane and -y/x trick to get a perpendicular vector.
-	if abs(normal.x) > abs(normal.y) {
-		// Were' nearer the X axis, so use the Y axis
-
-		scale_factor := 1 / linalg.sqrt(normal.z * normal.z + normal.x * normal.x)
-		tangent1 = {normal.z * scale_factor, 0, -normal.x * scale_factor}
-
-
-		// The new Y axis is at right angles to the new X and Z axes
-		// NOTE: This is just a cross product, but z.y terms are 0
-		tangent2 = {
-			normal.y * tangent1.x,
-			normal.z * tangent1.x - normal.x * tangent1.z,
-			-normal.y * tangent1.x
-		}
-	} else {
-		// We're nearer the Y axis, so use the X axis
-
-		scale_factor := 1 / linalg.sqrt(normal.z * normal.z + normal.y * normal.y)
-		tangent1 = {0, -normal.z * scale_factor, normal.y * scale_factor }
-
-		// The new Y axis is at right angles to the new X and Z axes
-		// NOTE: This is just a cross product, but z.x terms are 0
-		tangent2 = {
-			normal.y * tangent1.z - normal.z * tangent1.y,
-			-normal.x * tangent1.z,
-			normal.x * tangent1.y,
-		}
-	}
-
-	mat : Mat3
-	mat[0] = normal
-	mat[1] = tangent1
-	mat[2] = tangent2
-	return mat
-}
-
-
 

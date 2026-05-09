@@ -220,11 +220,6 @@ run_game :: proc(state: ^GameState) {
 				rl.DrawLine3D(contact.position, contact.position + contact.penetration * contact.normal, Color{255, 0, 0, 255})
 				rl.DrawSphere(contact.position, 0.05, Color{255, 0, 0, 255})
 			}
-
-			basis := physics.make_orthonormal_basis(linalg.normalize0(player.rigidbody.position))
-			rl.DrawLine3D({0, 0, 0}, basis * Vec3{10, 0, 0}, {0, 0, 255, 255})
-			rl.DrawLine3D({0, 0, 0}, basis * Vec3{0, 10, 0}, {0, 0, 255, 055})
-			rl.DrawLine3D({0, 0, 0}, basis * Vec3{0, 0, 10}, {0, 0, 255, 055})
 		}
 
 		// UI 
@@ -254,12 +249,11 @@ update_physics :: proc(state: ^GameState, dt: f32) {
 		local_offset = linalg.matrix4_translate_f32({0, -0.25, 0}),
 		shape        = physics.PlaneShape{ normal = {0, 1, 0 } }
 	}
-	physics.coll_recompute_transform(&ground_plane)
+	physics.collider_recompute_transform(&ground_plane)
 
-	physics.begin_world(&state.world)
 	for &item in state.items {
 		physics.rb_recompute_transform(&item.rigidbody)
-		physics.coll_recompute_transform(&item.coll)
+		physics.collider_recompute_transform(&item.coll)
 	}
 
 	// Collide everything with the ground
@@ -268,6 +262,7 @@ update_physics :: proc(state: ^GameState, dt: f32) {
 	}
 
 	// Collide everything with everything else
+	physics.clear_contacts(&state.world)
 	for i in 0..<len(state.items) {
 		for j in i+1..<len(state.items) {
 			item1 := &state.items[i]
@@ -278,8 +273,8 @@ update_physics :: proc(state: ^GameState, dt: f32) {
 
 	for idx in 0..<state.world.contact_idx {
 		contact := &state.world.contacts[idx]
-		if contact.colliders[0].rigidbody != nil {
-			contact.colliders[0].rigidbody.position += contact.normal * contact.penetration * dt * 0.5
+		if contact.collider.rigidbody != nil {
+			contact.collider.rigidbody.position += contact.normal * contact.penetration * dt * 0.5
 		}
 	}
 }
