@@ -41,11 +41,12 @@ delete_world :: proc(world: ^World) {
 Rigidbody :: struct {
 	position : Vec3,
 	rotation : Quat, // aka orientation
-	inverse_inertia_tensor : Mat3,
+	local_inertia_tensor : Mat3,
 
 	// Derived data
 
 	_transform, _transform_inverse : Mat4,
+	_inverse_inertia_tensor: Mat3,
 }
 
 // Useful for objects that dont already have one ig.
@@ -60,14 +61,18 @@ rigidbody :: proc(position := Vec3{0, 0, 0}, rotation := linalg.QUATERNIONF32_ID
 }
 
 // TODO: consider doing this lazily
-rb_recompute_transform :: proc(rigidbody : ^Rigidbody) {
+rb_recompute_derived :: proc(rigidbody : ^Rigidbody) {
 	rigidbody._transform = linalg.matrix4_from_quaternion(rigidbody.rotation)
-
 	rigidbody._transform[0, 3] = rigidbody.position[0]
 	rigidbody._transform[1, 3] = rigidbody.position[1]
 	rigidbody._transform[2, 3] = rigidbody.position[2]
 
 	rigidbody._transform_inverse = linalg.matrix4_inverse(rigidbody._transform)
+
+	// The implementation in the book was optimized with a code generator.
+	world_rotation       := linalg.matrix3_from_matrix4(rigidbody._transform)
+	inertia_tensor_world := world_rotation * rigidbody.local_inertia_tensor
+	rigidbody._inverse_inertia_tensor = linalg.inverse(inertia_tensor_world)
 }
 
 rb_relative_pos :: proc(rigidbody: ^Rigidbody, world: Vec3) -> Vec3 {
