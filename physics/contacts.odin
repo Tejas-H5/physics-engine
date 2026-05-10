@@ -1,12 +1,10 @@
-// Mainly contact-generation/collision related code here
-
 package physics
 
 import "core:math"
 import "core:math/linalg"
 
 @(private)
-get_next_contact :: proc(dst: ^World) -> ^Contact {
+get_next_contact :: proc(dst: ^World, position: Vec3) -> ^Contact {
 	assert(dst.contact_idx < len(dst.contacts))
 	slot := &dst.contacts[dst.contact_idx]
 	dst.contact_idx += 1
@@ -74,9 +72,9 @@ generate_contacts_sphere_x_sphere :: proc(
 	contact.penetration = sphere_a.radius + sphere_b.radius - size
 
 	// TODO: review
-	contact.position    = a_pos + (sphere_a.radius - contact.penetration / 0.5) * contact.normal
-	contact.collider        = sphere_a_coll
-	contact.other_collider  = sphere_b_coll
+	contact.position   = a_pos + (sphere_a.radius - contact.penetration / 0.5) * contact.normal
+	contact.rigidbody       = sphere_a_coll.rigidbody
+	contact.other_rigidbody = sphere_b_coll.rigidbody
 }
 
 // Technically - its a half space and not a plane :D - A 'real' plane handles collisions 
@@ -102,8 +100,8 @@ generate_contacts_plane_x_sphere :: proc(
 	contact.normal       = plane.normal
 	contact.penetration  = penetration
 	contact.position     = sphere_pos + (-sphere.radius) * contact.normal
-	contact.collider         = sphere_coll
-	contact.other_collider   = plane_coll
+	contact.rigidbody         = sphere_coll.rigidbody
+	contact.other_rigidbody   = plane_coll.rigidbody
 }
 
 @(private)
@@ -125,8 +123,8 @@ generate_contacts_plane_x_vertex :: proc(
 	contact.penetration  = -distance
 	// contact.position     = vertex + contact.penetration * contact.normal
 	contact.position     = vertex
-	contact.collider         = other_coll
-	contact.other_collider   = plane_coll
+	contact.rigidbody         = other_coll.rigidbody
+	contact.other_rigidbody   = plane_coll.rigidbody
 }
 
 @(private)
@@ -181,8 +179,8 @@ get_contact_sphere_x_box :: proc(
 	contact.normal       = normal 
 	contact.penetration  = sphere.radius - math.sqrt(dist_squared)
 	contact.position     = closest_point
-	contact.collider       = sphere_coll
-	contact.other_collider = box_coll
+	contact.rigidbody       = sphere_coll.rigidbody
+	contact.other_rigidbody = box_coll.rigidbody
 
 	ok = true
 	return 
@@ -233,8 +231,8 @@ get_contact_vertex_x_box :: proc(
 	contact.penetration  = linalg.length(to_closest_point)
 	contact.normal       = to_closest_point / contact.penetration
 	contact.position     = vertex
-	contact.collider = vertex_box_coll
-	contact.other_collider = box_coll
+	contact.rigidbody = vertex_box_coll.rigidbody
+	contact.other_rigidbody = box_coll.rigidbody
 
 	ok = true
 	return 
@@ -417,8 +415,8 @@ generate_contacts_box_x_box :: proc(
 								position    = a,
 								penetration = penetration,
 								normal      = a_to_b / penetration,
-								collider        = box_a_coll,
-								other_collider  = box_b_coll,
+								rigidbody        = box_a_coll.rigidbody,
+								other_rigidbody  = box_b_coll.rigidbody,
 							})
 						}
 					}
@@ -497,4 +495,5 @@ transform_to_axis :: proc(
 		box.half_size.z * z_amount
 	)
 }
+
 

@@ -1,5 +1,3 @@
-// The data model lives here
-
 package physics
 
 import "core:math"
@@ -64,37 +62,6 @@ Rigidbody :: struct {
 // I would consider removing though
 NILL_RIGIDBODY := Rigidbody{}
 
-rigidbody :: proc(position := Vec3{0, 0, 0}, rotation := linalg.QUATERNIONF32_IDENTITY) -> Rigidbody {
-	return {
-		position = position,
-		rotation = rotation,
-	}
-}
-
-// TODO: consider doing this lazily
-rb_recompute_derived :: proc(rb : ^Rigidbody) {
-	rb._transform = linalg.matrix4_from_quaternion(rb.rotation)
-	rb._transform[0, 3] = rb.position[0]
-	rb._transform[1, 3] = rb.position[1]
-// TODO: consider doing this lazily
-	rb._transform[2, 3] = rb.position[2]
-
-	rb._transform_inverse = linalg.matrix4_inverse(rb._transform)
-
-	// The implementation in the book was optimized with a code generator.
-	world_rotation       := linalg.matrix3_from_matrix4(rb._transform)
-	inertia_tensor_world := world_rotation * rb.inertia_tensor_local
-	rb._inverse_inertia_tensor = linalg.inverse(inertia_tensor_world)
-}
-
-rb_world_to_local_pos :: proc(rigidbody: ^Rigidbody, world: Vec3) -> Vec3 {
-	return mat4_mul_vec3(rigidbody._transform_inverse, world)
-}
-
-rb_local_to_world_pos :: proc(rigidbody: ^Rigidbody, local: Vec3) -> Vec3 {
-	return mat4_mul_vec3(rigidbody._transform, local)
-}
-
 Collider :: struct {
 	rigidbody    : ^Rigidbody,
 	shape        : ColliderShape,
@@ -122,71 +89,23 @@ BoxShape :: struct {
 	half_size : Vec3,
 }
 
-collider_position :: proc(c: ^Collider) -> Vec3 {
-	return get_axis(c._transform, 3)
-}
-
-collider :: proc(rb: ^Rigidbody, shape: ColliderShape, offset := linalg.MATRIX4F32_IDENTITY) -> Collider {
-	return Collider {
-		rigidbody    = rb,
-		local_offset = offset,
-		shape        = shape,
-	}
-}
-
-collider_recompute_transform :: proc(coll: ^Collider) {
-	if coll.rigidbody == nil {
-		coll._transform = coll.local_offset
-	} else {
-		coll._transform = coll.rigidbody._transform * coll.local_offset
-	}
-
-	coll._transform_inverse = linalg.matrix4_inverse(coll._transform)
-}
-
-get_box_half_size_oriented :: proc(box_coll: ^Collider, box: BoxShape) -> Vec3 {
-	return box.half_size * get_box_axes(box_coll, box)
-}
-
-get_box_axes :: proc(box_coll: ^Collider, box: BoxShape) -> Vec3 {
-	return (
-		get_collider_axis(box_coll, 0) + 
-		get_collider_axis(box_coll, 1) + 
-		get_collider_axis(box_coll, 2)
-	)
-}
-
-// NOTE: Assumes collider itself was not also transformed.
-// TODO: Each collider might need it's own matrix pairs.
-get_collider_axis :: proc(coll: ^Collider, axis: int) -> Vec3 {
-	return get_axis(coll._transform, axis)
-}
-
-collider_relative_pos :: proc(coll: ^Collider, world: Vec3) -> Vec3 {
-	return mat4_mul_vec3(coll._transform_inverse, world)
-}
-
-collider_world_pos :: proc(coll: ^Collider, relative: Vec3) -> Vec3 {
-	return mat4_mul_vec3(coll._transform, relative)
-}
-
 // TODO: Mesh collider. 
 // With this done, we can make literally anything.
 
 Contact :: struct {
 	// The position of the contact in world coordinates, where other_coll should push back on coll.
-	position    : Vec3,
+	position          : Vec3,
 	// The direction in which other_coll should push back on coll
 	normal      : Vec3,
 	// The amount which we should move coll in the direction of normal such that they are just touching.
 	penetration : f32,
 
-	// The collider doing the colliding
-	collider: ^Collider,
-	// The collider resisting the collision
-	// NOTE: we only generate one pair of contacts, and assume your resolution pass will 
-	// also handle other_collider -> collider as well for each contact we generate
-	other_collider: ^Collider,
+	// The body doing the colliding, and the body resisting the collision.
+	// It is a deliberate deicision to not include the actual collider.
+	// A collider is just one mechanism of creating a contact.
+	// Any user code could also create contacts, and
+	// have them resolve the same way as internal engine code!
+	rigidbody, other_rigidbody: ^Rigidbody,
 }
 
 BOX_CORNERS :: []Vec3{
