@@ -252,7 +252,6 @@ update_physics :: proc(state: ^GameState, dt: f32) {
 	physics.collider_recompute_transform(&ground_plane)
 
 	for &item in state.items {
-		physics.rb_recompute_derived(&item.rigidbody)
 		physics.collider_recompute_transform(&item.coll)
 	}
 

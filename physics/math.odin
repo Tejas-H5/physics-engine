@@ -110,3 +110,22 @@ closest_points_between_lines :: proc(p1, p2, p3, p4: Vec3) -> (pa: Vec3, ta: f32
 	return
 }
 
+// I saw it in https://github.com/idmillington/cyclone-physics/blob/d75c8d9edeebfdc0deebe203fe862299084b1e30/include/cyclone/core.h#L512
+// so it must be right. Right? 
+quaternion_rotate_by_axis :: proc(quat: Quat, axis: Vec3) -> Quat {
+	q := Quat{}
+	q.x = axis.x
+	q.y = axis.y
+	q.z = axis.z
+
+	q = linalg.mul(q, quat)
+
+	result := quat
+
+	result.x += q.x * 0.5
+	result.y += q.y * 0.5
+	result.z += q.z * 0.5
+	result.w += q.w * 0.5
+
+	return result
+}
