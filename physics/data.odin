@@ -94,18 +94,30 @@ BoxShape :: struct {
 
 Contact :: struct {
 	// The position of the contact in world coordinates, where other_coll should push back on coll.
-	position          : Vec3,
+	// It's directly in-between the overlap. It needs to be - a lot of the contact resolution stuff
+	// assumes we can reuse this position for both bodies when resolving the contact, so 
+	// it can't be on the edge of either collider (which is how I had it before)
+	position    : Vec3,
 	// The direction in which other_coll should push back on coll
 	normal      : Vec3,
 	// The amount which we should move coll in the direction of normal such that they are just touching.
 	penetration : f32,
 
-	// The body doing the colliding, and the body resisting the collision.
+	// The bodies colliding with each other. The position and normal are from the POV of the first body.
 	// It is a deliberate deicision to not include the actual collider.
 	// A collider is just one mechanism of creating a contact.
 	// Any user code could also create contacts, and
 	// have them resolve the same way as internal engine code!
-	rigidbody, other_rigidbody: ^Rigidbody,
+	bodies: [2]^Rigidbody,
+
+	// Contact resolution step - computed values
+	// TODO: all our matricies should be like Target_from_Source. 
+	// The names will touch each other in the code, i.e contact_pos = contact_from_world * world_pos
+	_world_from_contact         : Mat3, 
+	_contact_from_world         : Mat3,
+	_relative_velocity          : Vec3,
+	_desired_delta_velocity     : Vec3,
+	_relative_contact_positions : [2]Vec3,
 }
 
 BOX_CORNERS :: []Vec3{
