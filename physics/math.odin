@@ -32,7 +32,6 @@ make_orthonormal_basis :: proc(normal: Vec3) -> Mat3 {
 		scale_factor := 1 / linalg.sqrt(normal.z * normal.z + normal.x * normal.x)
 		tangent1 = {normal.z * scale_factor, 0, -normal.x * scale_factor}
 
-
 		// The new Y axis is at right angles to the new X and Z axes
 		// NOTE: This is just a cross product, but z.y terms are 0
 		tangent2 = {

@@ -58,9 +58,6 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 			if contact.bodies[1] != nil {
 				contact._relative_velocity -= get_contact_relative_velocity(contact, 1)
 			}
-
-			// TODO: compute desired delta or whtaever
-
 			get_contact_relative_velocity :: proc(contact: ^Contact, body_idx: int) -> Vec3 {
 				rb := contact.bodies[body_idx]
 
@@ -76,11 +73,25 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 				contact_total_velocity := contact._contact_from_world * total_velocity
 				return contact_total_velocity
 			}
+
+
+			// TODO: compute desired delta or whtaever
+
 		}
 	}
 
+	// Intermediate storage
+
+	// TODO: resolve impulses at some point
+
+	// TODO: need to spend some time understanding why this would even work
+
 	// Resolve penetration
 	{
+		// TODO: How the heck is this populated for position algo ??
+		linear_changes: [2]Vec3
+		angular_changes: [2]Vec3
+
 		last_contact : ^Contact
 		POSITION_ITERATIONS :: 1000
 		for i in 0..<POSITION_ITERATIONS {
@@ -98,23 +109,92 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 			// TODO: Match the awake state at the contact. (What is this?)
 
 			// Resolve the penetration
-			{
-				apply_position_change(worst_contact)
 
-				// Update penetrations
-				{
+			apply_position_change(worst_contact, &linear_changes, &angular_changes)
+
+			// May have changed the penetration of other bodies, so we update the contacts
+			for &contact, i in world.contacts {
+				for contact_body, contact_body_idx in contact.bodies {
+					if contact_body == nil {continue}
+
+					for &worst_contact_body, worst_contact_body_idx in worst_contact.bodies {
+						if contact_body != worst_contact_body {continue}
+
+						cp := linalg.cross(
+							angular_changes[worst_contact_body_idx], 
+							contact._relative_contact_positions[contact_body_idx]
+						)
+
+						cp += linear_changes[worst_contact_body_idx]
+
+						// This is negative for the first body
+						contact.penetration += 
+							(contact_body_idx == 0 ? -1 : 1) *
+							linalg.dot(cp, contact.normal)
+					}
 				}
 			}
 		}
 	}
 
-	// -------------- old stuff (we need it)
+	// TODO: Wait should this be happening first? and in the same loop??
+	// Resolve velocity OMG it just never ends bro wtf
+	{
+		linear_changes: [2]Vec3
+		angular_changes: [2]Vec3
 
+		VELOCITY_ITERATIONS :: 1000
+		for i in 0..<VELOCITY_ITERATIONS {
+			fastest_contact : ^Contact
+			fastest_speed2 : f32
+			for &contact in world.contacts[0:world.contact_idx] {
+				vel2 := linalg.length2(contact._relative_velocity)
+				if vel2 > fastest_speed2 {
+					fastest_speed2  = vel2
+					fastest_contact = &contact
+				}
+			}
+
+			if fastest_contact == nil {break}
+
+			apply_impulse_change(fastest_contact, &linear_changes, &angular_changes)
+
+			// Other body velocities may have changed this time
+			for &contact, i in world.contacts {
+				for contact_body, contact_body_idx in contact.bodies {
+					if contact_body == nil {continue}
+
+					for &fastest_contact_body, fastest_contact_body_idx in fastest_contact.bodies {
+						if contact_body != fastest_contact_body {continue}
+
+						cp := linalg.cross(
+							angular_changes[fastest_contact_body_idx], 
+							contact._relative_contact_positions[contact_body_idx]
+						)
+
+						cp += linear_changes[fastest_contact_body_idx]
+
+						// The second body negative.
+						contact.penetration += 
+							(contact_body_idx == 0 ? 1 : -1) *
+							linalg.dot(cp, contact.normal)
+					}
+				}
+			}
+		}
+	}
 }
 
-apply_impulse_change :: proc(contact: ^Contact) {
-	get_velocity_per_unit_impulse_contact :: proc(contact: ^Contact, body_idx: int) -> f32 {
-		rb := contact.bodies[body_idx]
+apply_impulse_change :: proc(
+	contact: ^Contact,
+	linear_changes: ^[2]Vec3,
+	angular_changes: ^[2]Vec3,
+) {
+	delta_velocity := f32(0)
+
+	for rb, body_idx in contact.bodies {
+		if rb == nil {continue}
+
 		relative_contact_position := contact._relative_contact_positions[body_idx]
 
 		contact_velocity_per_unit_impulse : f32
@@ -137,16 +217,16 @@ apply_impulse_change :: proc(contact: ^Contact) {
 			contact_velocity_per_unit_impulse += rb.inverse_mass
 		}
 
-		return contact_velocity_per_unit_impulse
+		delta_velocity += contact_velocity_per_unit_impulse
 	}
 
-	delta_velocity := get_velocity_per_unit_impulse_contact(contact, 0)
-	if contact.bodies[1] != nil {
-		// TODO: consider if it should really be -= (the book also had += btw so I'm keeping it, though it doesnt make sense)
-		delta_velocity += get_velocity_per_unit_impulse_contact(contact, 1)
-	}
-
-	apply_required_impulse :: proc(contact: ^Contact, body_idx: int, delta_velocity: f32, sign: f32) {
+	apply_required_impulse :: proc(
+		contact: ^Contact,
+		body_idx: int,
+		delta_velocity: f32,
+		sign: f32,
+		velocity_changes: ^[2]Vec3
+	) {
 		rb := contact.bodies[body_idx]
 		relative_position := contact._relative_contact_positions[body_idx]
 
@@ -165,20 +245,54 @@ apply_impulse_change :: proc(contact: ^Contact) {
 		velocity_change         := rb.inverse_mass * impulse * sign
 		angular_velocity_change := rb._inverse_inertia_tensor * impulsive_torque * sign
 
+		velocity_changes[body_idx] = velocity_change
+
 		// TODO: validate. no dt ??? HOW? 
 		rb.velocity         += velocity_change
 		rb.angular_velocity += angular_velocity_change
 	}
 
-	apply_required_impulse(contact, 0, delta_velocity, 1)
-	if contact.bodies[1] != nil {
-		apply_required_impulse(contact, 1, delta_velocity, -1)
+	for rb, body_idx in contact.bodies {
+		if rb == nil {continue}
+
+		relative_position := contact._relative_contact_positions[body_idx]
+
+		velocity := linalg.cross(rb.angular_velocity, relative_position) + rb.velocity
+			
+		contact_velocity       := contact._contact_from_world * velocity
+		restitution            := f32(1) // TODO: make this settable. 'valid' values are between 0 and 1, possibly inclusive, but we'll allow anything
+		desired_delta_velocity := -contact_velocity.x * (1 + restitution)
+
+		contact_impulse   := Vec3{}
+		contact_impulse.x = desired_delta_velocity / delta_velocity
+
+		impulse          := contact._world_from_contact * contact_impulse
+		impulsive_torque := linalg.cross(impulse, relative_position)
+
+		sign : f32 = body_idx == 0 ? 1 : -1
+		velocity_change         := rb.inverse_mass * impulse * sign
+		angular_velocity_change := rb._inverse_inertia_tensor * impulsive_torque * sign
+
+		linear_changes[body_idx]  = velocity_change
+		angular_changes[body_idx] = angular_velocity_change
+
+		// TODO: validate. no dt ??? HOW? 
+		rb.velocity         += velocity_change
+		rb.angular_velocity += angular_velocity_change
 	}
 }
 
-apply_position_change :: proc(contact: ^Contact) {
-	get_inertias :: proc(contact: ^Contact, body_idx: int) -> (f32, f32) {
-		rb := contact.bodies[body_idx]
+apply_position_change :: proc(
+	contact: ^Contact,
+	linear_changes, angular_changes: ^[2]Vec3
+) {
+	linear_inertias: [2]f32
+	angular_inertias: [2]f32
+	total_inertia: f32
+
+	for rb, body_idx in contact.bodies {
+		if rb == nil {continue}
+
 		relative_contact_position := contact._relative_contact_positions[body_idx]
 
 		// Angular
@@ -186,48 +300,28 @@ apply_position_change :: proc(contact: ^Contact) {
 		angular_inertia_world = rb._inverse_inertia_tensor * angular_inertia_world
 		angular_inertia_world = linalg.cross(angular_inertia_world, relative_contact_position)
 		angular_inertia := linalg.dot(angular_inertia_world, contact.normal)
+		angular_inertias[body_idx] = angular_inertia
 
 		// Linear
 		linear_inertia := rb.inverse_mass
+		linear_inertias[body_idx] = linear_inertia
 
-		return linear_inertia, angular_inertia
+		total_inertia += linear_inertia + angular_inertia
 	}
 
-	apply_angular_move :: proc(contact: ^Contact, body_idx: int, angular_inertia, angular_move: f32) {
-		rb := contact.bodies[body_idx]
-		relative_contact_position := contact._relative_contact_positions[body_idx]
+	// Need total inertia, so can't merge these two loops
 
-		impulsive_torque := linalg.cross(relative_contact_position, contact.normal)
-		impulse_per_move := rb._inverse_inertia_tensor * impulsive_torque
-		rotation_per_move := impulse_per_move / angular_inertia
-		rotation := angular_move * rotation_per_move
+	for rb, body_idx in contact.bodies {
+		if rb == nil {continue}
 
-		rb.rotation = quat_rotate_by_axis(rb.rotation, rotation)
-	}
-
-	linear_inertias: [2]f32
-	angular_inertias: [2]f32
-
-	linear_inertias[0], angular_inertias[0] = get_inertias(contact, 0)
-	total_inertia := linear_inertias[0] + angular_inertias[0]
-
-	if contact.bodies[1] != nil {
-		linear_inertias[1], angular_inertias[1] = get_inertias(contact, 1)
-		total_inertia := linear_inertias[1] + angular_inertias[1]
-	}
-
-	get_linear_angular_moves :: proc(
-		contact: ^Contact,
-		linear_inertia, angular_inertia, total_inertia: f32
-	) -> (linear_move, angular_move: f32) {
 		// Dont let angular move get too large - we may over-rotate the object if this happens.
 		// I was thinking hey why not just limit rotation such that the surface normal of the nearest surface
 		// matches the contact normal, but sounds like a bunch of work so I haven't done that yet.
 		// The book suggests to just use a threhsold that we can tweak as needed
 		angular_limit_constraint := f32(0.5)
 
-		linear_move  = contact.penetration * linear_inertia / total_inertia
-		angular_move = contact.penetration * angular_inertia / total_inertia
+		linear_move  := contact.penetration * linear_inertias[body_idx] / total_inertia
+		angular_move := contact.penetration * angular_inertias[body_idx] / total_inertia
 
 		if abs(angular_move) > angular_limit_constraint {
 			total_move := linear_move + angular_move
@@ -241,16 +335,22 @@ apply_position_change :: proc(contact: ^Contact) {
 			linear_move = total_move - angular_move
 		}
 
-		return
-	}
+		relative_contact_position := contact._relative_contact_positions[body_idx]
 
-	linear_move, angular_move := get_linear_angular_moves(contact, linear_inertias[0], angular_inertias[0], total_inertia)
-	contact.bodies[0].position += linear_move * contact.normal
-	apply_angular_move(contact, 0, angular_inertias[0], angular_move)
+		// Apply linear move
+		linear_changes[body_idx] = linear_move * contact.normal
+		contact.bodies[body_idx].position += linear_changes[body_idx]
 
-	if contact.bodies[1] != nil {
-		linear_move, angular_move := get_linear_angular_moves(contact, linear_inertias[1], angular_inertias[1], total_inertia)
-		contact.bodies[1].position += linear_move * contact.normal
-		apply_angular_move(contact, 1, angular_inertias[1], angular_move)
+		// NOTE: cyclone physics is far more complex here. 
+		// The book must not have fully explained this bit yet.
+		// Apply angular move
+		impulsive_torque := linalg.cross(relative_contact_position, contact.normal)
+		impulse_per_move := rb._inverse_inertia_tensor * impulsive_torque
+		rotation_per_move := impulse_per_move / angular_inertias[body_idx]
+		rotation := angular_move * rotation_per_move
+
+		rb.rotation = quat_rotate_by_axis(rb.rotation, rotation)
+
+		angular_changes[body_idx] = rotation
 	}
 }
