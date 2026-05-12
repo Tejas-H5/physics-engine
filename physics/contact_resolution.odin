@@ -74,9 +74,7 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 				return contact_total_velocity
 			}
 
-
-			// TODO: compute desired delta or whtaever
-
+			calculate_desired_velocity(contact, dt)
 		}
 	}
 
@@ -128,9 +126,11 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 						cp += linear_changes[worst_contact_body_idx]
 
 						// This is negative for the first body
-						contact.penetration += 
+						contact._relative_velocity += 
 							(contact_body_idx == 0 ? -1 : 1) *
-							linalg.dot(cp, contact.normal)
+							contact._contact_from_world * cp
+
+						calculate_desired_velocity(&contact, dt)
 					}
 				}
 			}
@@ -157,7 +157,7 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 
 			if fastest_contact == nil {break}
 
-			apply_impulse_change(fastest_contact, &linear_changes, &angular_changes)
+			apply_impulse_change(fastest_contact, &linear_changes, &angular_changes, dt)
 
 			// Other body velocities may have changed this time
 			for &contact, i in world.contacts {
@@ -185,10 +185,33 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 	}
 }
 
+calculate_desired_velocity :: proc(contact: ^Contact, dt: f32) {
+	velocity_from_acceleration := 
+		linalg.dot(contact.bodies[0].acceleration_last_frame, dt * contact.normal)
+
+	if contact.bodies[1] != nil {
+		velocity_from_acceleration -=
+			linalg.dot(contact.bodies[1].acceleration_last_frame, dt * contact.normal)
+	}
+
+	// If the velocity is very slow, limit the restitution
+	velocity_limit := f32(0.0001)
+	restitution := f32(0.1) // TODO: make this configurable. I think it's the 'bounce'
+	if abs(contact._relative_velocity.x) < velocity_limit {
+		// TODO: wait actually we dont have restitution yet. Stil not sure wtf it is
+		restitution = 0
+	}
+
+	contact._desired_delta_velocity =
+		-contact._relative_velocity.x +
+		-restitution * (contact._relative_velocity.x - velocity_from_acceleration)
+}
+
 apply_impulse_change :: proc(
 	contact: ^Contact,
 	linear_changes: ^[2]Vec3,
 	angular_changes: ^[2]Vec3,
+	dt: f32,
 ) {
 	delta_velocity := f32(0)
 
@@ -201,14 +224,18 @@ apply_impulse_change :: proc(
 
 		// Rotational component
 		{
-			torque_per_unit_impulse   := linalg.cross(relative_contact_position, contact.normal)
-			rotation_per_unit_impulse := rb._inverse_inertia_tensor * torque_per_unit_impulse
-			velocity_per_unit_impulse := linalg.cross(rotation_per_unit_impulse, relative_contact_position)
+			torque_per_unit_impulse := 
+				linalg.cross(relative_contact_position, contact.normal)
+			rotation_per_unit_impulse := 
+				rb._inverse_inertia_tensor * torque_per_unit_impulse
+			velocity_per_unit_impulse := 
+				linalg.cross(rotation_per_unit_impulse, relative_contact_position)
 
 			// > It is better, in my opinion, to think in terms of the change of coordinates, because
 			// > as we introduce friction in the next chapter, the simple scalar product trick can no
 			// > longer be used.
-			contact_velocity_per_unit_impulse = (contact._contact_from_world * rotation_per_unit_impulse).x
+			contact_velocity_per_unit_impulse = 
+				(contact._contact_from_world * rotation_per_unit_impulse).x
 		}
 
 		// linear component
@@ -220,38 +247,6 @@ apply_impulse_change :: proc(
 		delta_velocity += contact_velocity_per_unit_impulse
 	}
 
-	apply_required_impulse :: proc(
-		contact: ^Contact,
-		body_idx: int,
-		delta_velocity: f32,
-		sign: f32,
-		velocity_changes: ^[2]Vec3
-	) {
-		rb := contact.bodies[body_idx]
-		relative_position := contact._relative_contact_positions[body_idx]
-
-		velocity := linalg.cross(rb.angular_velocity, relative_position) + rb.velocity
-			
-		contact_velocity       := contact._contact_from_world * velocity
-		restitution            := f32(1) // TODO: make this settable. 'valid' values are between 0 and 1, possibly inclusive, but we'll allow anything
-		desired_delta_velocity := -contact_velocity.x * (1 + restitution)
-
-		contact_impulse   := Vec3{}
-		contact_impulse.x = desired_delta_velocity / delta_velocity
-
-		impulse          := contact._world_from_contact * contact_impulse
-		impulsive_torque := linalg.cross(impulse, relative_position)
-
-		velocity_change         := rb.inverse_mass * impulse * sign
-		angular_velocity_change := rb._inverse_inertia_tensor * impulsive_torque * sign
-
-		velocity_changes[body_idx] = velocity_change
-
-		// TODO: validate. no dt ??? HOW? 
-		rb.velocity         += velocity_change
-		rb.angular_velocity += angular_velocity_change
-	}
-
 	for rb, body_idx in contact.bodies {
 		if rb == nil {continue}
 
@@ -259,12 +254,11 @@ apply_impulse_change :: proc(
 
 		velocity := linalg.cross(rb.angular_velocity, relative_position) + rb.velocity
 			
-		contact_velocity       := contact._contact_from_world * velocity
-		restitution            := f32(1) // TODO: make this settable. 'valid' values are between 0 and 1, possibly inclusive, but we'll allow anything
-		desired_delta_velocity := -contact_velocity.x * (1 + restitution)
+		contact._relative_velocity = contact._contact_from_world * velocity
+		calculate_desired_velocity(contact, dt)
 
 		contact_impulse   := Vec3{}
-		contact_impulse.x = desired_delta_velocity / delta_velocity
+		contact_impulse.x = contact._desired_delta_velocity.x / delta_velocity
 
 		impulse          := contact._world_from_contact * contact_impulse
 		impulsive_torque := linalg.cross(impulse, relative_position)
