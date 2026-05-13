@@ -252,28 +252,22 @@ update_physics :: proc(state: ^GameState, dt: f32) {
 	physics.collider_recompute_transform(&ground_plane)
 
 	for &item in state.items {
+		physics.rb_recompute_derived(&item.rigidbody)
 		physics.collider_recompute_transform(&item.coll)
 	}
 
 	// Collide everything with the ground
+	physics.clear_contacts(&state.world)
 	for &item in state.items {
 		physics.generate_contacts_for_colliders(&ground_plane, &item.coll, &state.world)
 	}
 
 	// Collide everything with everything else
-	physics.clear_contacts(&state.world)
 	for i in 0..<len(state.items) {
 		for j in i+1..<len(state.items) {
 			item1 := &state.items[i]
 			item2 := &state.items[j]
 			physics.generate_contacts_for_colliders(&item1.coll, &item2.coll, &state.world)
-		}
-	}
-
-	for idx in 0..<state.world.contact_idx {
-		contact := &state.world.contacts[idx]
-		if contact.collider.rigidbody != nil {
-			contact.collider.rigidbody.position += contact.normal * contact.penetration * dt * 0.5
 		}
 	}
 }
