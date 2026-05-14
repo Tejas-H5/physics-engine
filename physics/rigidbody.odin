@@ -2,9 +2,21 @@ package physics
 
 import "core:math"
 import "core:math/linalg"
+import rl "vendor:raylib"
+import "core:fmt"
+
+DEBUG_STUFF :: true
 
 rb_add_force :: proc(rb: ^Rigidbody, force: Vec3) {
 	rb.force_accum += force
+	if DEBUG_STUFF {
+		rl.DrawLine3D(rb.position, rb.position + force, rl.Color{255, 0, 0, 255})
+	}
+}
+
+rb_add_acceleration :: proc(rb: ^Rigidbody, accel: Vec3) {
+	if rb.inverse_mass == 0 {return}
+	rb_add_force(rb, accel / rb.inverse_mass)
 }
 
 rb_add_torque :: proc(rb: ^Rigidbody, torque: Vec3) {
@@ -25,6 +37,7 @@ rb_clear_accumulators :: proc(rb: ^Rigidbody) {
 
 rb_integrate :: proc(rb: ^Rigidbody, dt: f32) {
 	rb.acceleration_last_frame = rb.acceleration
+	rb.acceleration = {} // NOt sure.
 	rb.acceleration += rb.force_accum * rb.inverse_mass
 	rb.force_accum = {}
 
@@ -48,10 +61,18 @@ rb_integrate :: proc(rb: ^Rigidbody, dt: f32) {
 	rb_recompute_derived(rb)
 }
 
-rigidbody :: proc(position := Vec3{0, 0, 0}, rotation := linalg.QUATERNIONF32_IDENTITY) -> Rigidbody {
+rigidbody :: proc(
+	position := Vec3{0, 0, 0},
+	rotation := linalg.QUATERNIONF32_IDENTITY,
+	inverse_mass := f32(1),
+) -> Rigidbody {
 	return {
-		position = position,
-		rotation = rotation,
+		position             = position,
+		rotation             = rotation,
+		linear_damping       = 0.995,
+		angular_damping      = 0.995,
+		inertia_tensor_local = inertia_tensor_box({1, 1, 1 }, 1), // TODO: compute this
+		inverse_mass         = inverse_mass,
 	}
 }
 

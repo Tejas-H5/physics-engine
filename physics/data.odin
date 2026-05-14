@@ -23,7 +23,7 @@ Color :: [4]f32
 
 World :: struct {
 	contacts    : []Contact,
-	contact_idx : int,
+	contacts_idx : int,
 }
 
 make_world :: proc(max_num_contacts: int) -> World {
@@ -57,10 +57,6 @@ Rigidbody :: struct {
 	_transform, _transform_inverse : Mat4,
 	_inverse_inertia_tensor: Mat3,
 }
-
-// Useful for objects that dont already have one ig.
-// I would consider removing though
-NILL_RIGIDBODY := Rigidbody{}
 
 Collider :: struct {
 	rigidbody    : ^Rigidbody,
@@ -116,7 +112,7 @@ Contact :: struct {
 	_world_from_contact         : Mat3, 
 	_contact_from_world         : Mat3,
 	_relative_velocity          : Vec3,
-	_desired_delta_velocity     : Vec3,
+	_desired_delta_velocity     : f32,
 	_relative_contact_positions : [2]Vec3,
 }
 

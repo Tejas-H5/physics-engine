@@ -50,46 +50,46 @@ load_game_state :: proc() -> ^GameState {
 	state.camera_up     = {0, 1, 0}
 	state.last_monitor  = -1
 
-	cube_mesh := rl.GenMeshCube(1, 1, 1)
+	cube_mesh   := rl.GenMeshCube(1, 1, 1)
 	sphere_mesh := rl.GenMeshSphere(0.5, 64, 64)
 
-	state.items = make([]Item, 4)
+	state.items = make([]Item, 2)
 
 	// Cubes
+	// item := &state.items[0]
+	// item^ = Item{
+	// 	size      = {1,1,1},
+	// 	color     = {255, 0, 0, 50},
+	// 	rigidbody = physics.rigidbody(position={1.5, 1, 0.5}),
+	// 	model     = rl.LoadModelFromMesh(cube_mesh),
+	// 	coll      = physics.collider(&item.rigidbody, physics.BoxShape{ half_size = Vec3{1, 1, 1} / 2 }),
+	// }
+
+	// item = &state.items[1]
+	// item^ = Item{
+	// 	size      = {1,1,1},
+	// 	color     = {255, 0, 0, 50},
+	// 	rigidbody = physics.rigidbody(position={2, 1, 0}),
+	// 	model     = rl.LoadModelFromMesh(cube_mesh),
+	// 	coll      = physics.collider(&item.rigidbody, physics.BoxShape{ half_size = Vec3{1, 1, 1} / 2 }),
+	// }
+
+	// Sphere
+
 	item := &state.items[0]
 	item^ = Item{
 		size      = {1,1,1},
 		color     = {255, 0, 0, 50},
-		rigidbody = physics.rigidbody(position={1.5, 0.5, 0.5}),
-		model     = rl.LoadModelFromMesh(cube_mesh),
-		coll      = physics.collider(&item.rigidbody, physics.BoxShape{ half_size = Vec3{1, 1, 1} / 2 }),
+		rigidbody = physics.rigidbody(position={0, 3, 0}),
+		model     = rl.LoadModelFromMesh(sphere_mesh),
+		coll      = physics.collider(&item.rigidbody, physics.SphereShape{ radius = 0.5 }),
 	}
 
 	item = &state.items[1]
 	item^ = Item{
 		size      = {1,1,1},
 		color     = {255, 0, 0, 50},
-		rigidbody = physics.rigidbody(position={2, 0, 0}),
-		model     = rl.LoadModelFromMesh(cube_mesh),
-		coll      = physics.collider(&item.rigidbody, physics.BoxShape{ half_size = Vec3{1, 1, 1} / 2 }),
-	}
-
-	// Sphere
-
-	item = &state.items[2]
-	item^ = Item{
-		size      = {1,1,1},
-		color     = {255, 0, 0, 50},
-		rigidbody = physics.rigidbody(position={4, 0, 0}),
-		model     = rl.LoadModelFromMesh(sphere_mesh),
-		coll      = physics.collider(&item.rigidbody, physics.SphereShape{ radius = 0.5 }),
-	}
-
-	item = &state.items[3]
-	item^ = Item{
-		size      = {1,1,1},
-		color     = {255, 0, 0, 50},
-		rigidbody = physics.rigidbody(position={6, 0, 0}),
+		rigidbody = physics.rigidbody(position={0.2, 1, 0.2}, inverse_mass = 0),
 		model     = rl.LoadModelFromMesh(sphere_mesh),
 		coll      = physics.collider(&item.rigidbody, physics.SphereShape{ radius = 0.5 }),
 	}
@@ -171,11 +171,11 @@ run_game :: proc(state: ^GameState) {
 	player.rigidbody.position += movement * dt
 
 	// Update
-	for state.t  > 0 {
-		state.t -= dt
+	// for state.t  > 0 {
+	// 	state.t -= dt
 
 		update_physics(state, dt)
-	}
+	// }
 
 	// Render
 	{
@@ -215,7 +215,7 @@ run_game :: proc(state: ^GameState) {
 
 			rlgl.DisableDepthTest()
 
-			for idx in 0..<state.world.contact_idx {
+			for idx in 0..<state.world.contacts_idx {
 				contact := &state.world.contacts[idx]
 				rl.DrawLine3D(contact.position, contact.position + contact.penetration * contact.normal, Color{255, 0, 0, 255})
 				rl.DrawSphere(contact.position, 0.05, Color{255, 0, 0, 255})
@@ -230,11 +230,17 @@ run_game :: proc(state: ^GameState) {
 
 			font_size := f32(100)
 
-			row := ui.cut_top(&rect, font_size)
-			draw_text(row.x, row.y, {0, 0, 0, 255}, font_size, "contacts: %v", state.world.contact_idx)
+			row := ui.cut_top(&rect, font_size); {
+				draw_text(row.x, row.y, {0, 0, 0, 255}, font_size, "contacts: %v", state.world.contacts_idx)
+			}
 
-			row = ui.cut_top(&rect, font_size)
-			draw_text(row.x, row.y, {0, 0, 0, 255}, font_size, "pos: %v", player.rigidbody.position)
+			row = ui.cut_top(&rect, font_size); {
+				draw_text(row.x, row.y, {0, 0, 0, 255}, font_size, "pos: %v", player.rigidbody.position)
+			}
+
+			row = ui.cut_top(&rect, font_size); {
+				draw_text(row.x, row.y, {0, 0, 0, 255}, font_size, "pos: %v", player.rigidbody.acceleration_last_frame)
+			}
 		}
 	}
 }
@@ -245,21 +251,16 @@ draw_text :: proc(x, y: f32, color: Color, font_size: f32, format: string, args:
 }
 
 update_physics :: proc(state: ^GameState, dt: f32) {
-	ground_plane := physics.Collider{
-		local_offset = linalg.matrix4_translate_f32({0, -0.25, 0}),
-		shape        = physics.PlaneShape{ normal = {0, 1, 0 } }
+	dt := dt
+	if dt > 0.1 {dt = 0.1}
+
+	for &item in state.items {
+		physics.rb_add_acceleration(&item.rigidbody, {0, -10, 0})
 	}
-	physics.collider_recompute_transform(&ground_plane)
 
 	for &item in state.items {
 		physics.rb_recompute_derived(&item.rigidbody)
 		physics.collider_recompute_transform(&item.coll)
-	}
-
-	// Collide everything with the ground
-	physics.clear_contacts(&state.world)
-	for &item in state.items {
-		physics.generate_contacts_for_colliders(&ground_plane, &item.coll, &state.world)
 	}
 
 	// Collide everything with everything else
@@ -269,5 +270,12 @@ update_physics :: proc(state: ^GameState, dt: f32) {
 			item2 := &state.items[j]
 			physics.generate_contacts_for_colliders(&item1.coll, &item2.coll, &state.world)
 		}
+	}
+
+	physics.resolve_contacts(&state.world, dt)
+	physics.clear_contacts(&state.world) // TODO: consider just putting this into resolve_contacts
+
+	for &item in state.items {
+		physics.rb_integrate(&item.rigidbody, dt)
 	}
 }

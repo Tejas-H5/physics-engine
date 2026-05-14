@@ -5,27 +5,18 @@ import "core:math/linalg"
 
 @(private)
 get_next_contact :: proc(dst: ^World) -> ^Contact {
-	assert(dst.contact_idx < len(dst.contacts))
-	slot := &dst.contacts[dst.contact_idx]
-	dst.contact_idx += 1
+	assert(dst.contacts_idx < len(dst.contacts))
+	slot := &dst.contacts[dst.contacts_idx]
+	dst.contacts_idx += 1
 	return slot
 }
 
 clear_contacts :: proc(w: ^World) {
-	w.contact_idx = 0
+	w.contacts_idx = 0
 }
 
 generate_contacts_for_colliders :: proc(a, b: ^Collider, dst: ^World) {
-	assert(dst.contact_idx < len(dst.contacts))
-
-	if a.rigidbody == nil {
-		a.rigidbody = &NILL_RIGIDBODY
-		NILL_RIGIDBODY = Rigidbody{}
-	}
-	if b.rigidbody == nil {
-		b.rigidbody = &NILL_RIGIDBODY
-		NILL_RIGIDBODY = Rigidbody{}
-	}
+	assert(dst.contacts_idx < len(dst.contacts))
 
 	switch a_shape in a.shape {
 	case SphereShape:
@@ -60,15 +51,15 @@ generate_contacts_sphere_x_sphere :: proc(
 	a_pos := collider_position(sphere_a_coll)
 	b_pos := collider_position(sphere_b_coll)
 
-	midline := b_pos - a_pos
-	size    := linalg.length(midline)
+	b_to_a := a_pos - b_pos
+	size    := linalg.length(b_to_a)
 	if size <= 0.0 || size >= sphere_a.radius + sphere_b.radius {
 		return
 	}
 
 	contact := get_next_contact(dst)
 
-	contact.normal      = midline / size
+	contact.normal      = b_to_a / size
 	contact.penetration = sphere_a.radius + sphere_b.radius - size
 
 	contact.position  = a_pos + (sphere_a.radius - contact.penetration * 0.5) * contact.normal
@@ -95,10 +86,10 @@ generate_contacts_plane_x_sphere :: proc(
 	}
 
 	contact := get_next_contact(dst)
-	contact.normal       = plane.normal
-	contact.penetration  = penetration
-	contact.position     = sphere_pos + (-sphere.radius * 0.5) * contact.normal
-	contact.bodies    = { sphere_coll.rigidbody, plane_coll.rigidbody }
+	contact.normal      = plane.normal
+	contact.penetration = penetration
+	contact.position    = sphere_pos + (-sphere.radius * 0.5) * contact.normal
+	contact.bodies      = { sphere_coll.rigidbody, plane_coll.rigidbody }
 }
 
 @(private)
@@ -333,7 +324,7 @@ generate_contacts_box_x_box :: proc(
 	}
 
 	// Point x Face
-	if false {
+	{
 		// TODO: we may want a more specific function here.
 		// enumerate the points of one cube and the other cube.
 
@@ -420,7 +411,7 @@ generate_contacts_box_x_box :: proc(
 
 	for contact in acc.max_contacts {
 		if contact.penetration == 0 {break}
-		if dst.contact_idx >= len(dst.contacts) {break}
+		if dst.contacts_idx >= len(dst.contacts) {break}
 		next_contact := get_next_contact(dst)
 		next_contact^ = contact
 	}
@@ -439,7 +430,7 @@ generate_contacts_plane_x_box :: proc(
 	box_half_size_oriented := get_box_half_size_oriented(box_coll, box)
 
 	for &corner in BOX_CORNERS {
-		if dst.contact_idx >= len(dst.contacts) {break}
+		if dst.contacts_idx >= len(dst.contacts) {break}
 
 		// TODO: Is it faster to unroll?
 		vertex := box_pos + (box_half_size_oriented * corner)

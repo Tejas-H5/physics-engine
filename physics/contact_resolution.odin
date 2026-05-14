@@ -3,6 +3,8 @@ package physics
 import "core:math"
 import "core:math/linalg"
 
+EPS :: 0.000001
+
 /*
 Usage:
 	// game update code can generate contacts
@@ -27,11 +29,9 @@ a create_collider() / destroy_collider() pair style API.
 resolve_contacts :: proc(world: ^World, dt: f32) {
 	// prepare the contacts
 	{
-		for i in 0..<world.contact_idx {
-			contact := &world.contacts[i]
-
-			if contact.bodies[i] == nil {
-				contact.bodies[i], contact.bodies[i + 1] = contact.bodies[i + 1], contact.bodies[i]
+		for &contact in world.contacts[0:world.contacts_idx] {
+			if contact.bodies[0] == nil {
+				contact.bodies[0], contact.bodies[1] = contact.bodies[1], contact.bodies[0]
 				contact.normal = -contact.normal
 			}
 			assert(contact.bodies[0] != nil)
@@ -54,9 +54,9 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 			// the overlap of the two rigidbodies rather than 2 contact.positions
 			// on the edges of the two colliders (which is what looks right in my head 
 			// but it's not how it's done in practice)
-			contact._relative_velocity = get_contact_relative_velocity(contact, 0)
+			contact._relative_velocity = get_contact_relative_velocity(&contact, 0)
 			if contact.bodies[1] != nil {
-				contact._relative_velocity -= get_contact_relative_velocity(contact, 1)
+				contact._relative_velocity -= get_contact_relative_velocity(&contact, 1)
 			}
 			get_contact_relative_velocity :: proc(contact: ^Contact, body_idx: int) -> Vec3 {
 				rb := contact.bodies[body_idx]
@@ -74,7 +74,7 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 				return contact_total_velocity
 			}
 
-			calculate_desired_velocity(contact, dt)
+			calculate_desired_velocity(&contact, dt)
 		}
 	}
 
@@ -87,15 +87,15 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 	// Resolve penetration
 	{
 		// TODO: How the heck is this populated for position algo ??
-		linear_changes: [2]Vec3
-		angular_changes: [2]Vec3
+		linear_changes  : [2]Vec3
+		angular_changes : [2]Vec3
 
 		last_contact : ^Contact
 		POSITION_ITERATIONS :: 1000
 		for i in 0..<POSITION_ITERATIONS {
 			worst_contact     : ^Contact
 			worst_penetration : f32
-			for &contact in world.contacts[0:world.contact_idx] {
+			for &contact in world.contacts[0:world.contacts_idx] {
 				if contact.penetration > worst_penetration {
 					worst_contact     = &contact
 					worst_penetration = contact.penetration
@@ -111,7 +111,7 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 			apply_position_change(worst_contact, &linear_changes, &angular_changes)
 
 			// May have changed the penetration of other bodies, so we update the contacts
-			for &contact, i in world.contacts {
+			for &contact, i in world.contacts[0:world.contacts_idx] {
 				for contact_body, contact_body_idx in contact.bodies {
 					if contact_body == nil {continue}
 
@@ -125,12 +125,10 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 
 						cp += linear_changes[worst_contact_body_idx]
 
-						// This is negative for the first body
-						contact._relative_velocity += 
-							(contact_body_idx == 0 ? -1 : 1) *
-							contact._contact_from_world * cp
-
-						calculate_desired_velocity(&contact, dt)
+						// This is negative for the first body - we reducing the penetration.
+						contact.penetration += 
+							(contact_body_idx == 0 ? -1 : 1) * 
+							linalg.dot(contact.normal, cp)
 					}
 				}
 			}
@@ -139,15 +137,15 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 
 	// TODO: Wait should this be happening first? and in the same loop??
 	// Resolve velocity OMG it just never ends bro wtf
-	{
-		linear_changes: [2]Vec3
-		angular_changes: [2]Vec3
+	if false {
+		linear_changes  : [2]Vec3
+		angular_changes : [2]Vec3
 
 		VELOCITY_ITERATIONS :: 1000
 		for i in 0..<VELOCITY_ITERATIONS {
 			fastest_contact : ^Contact
 			fastest_speed2 : f32
-			for &contact in world.contacts[0:world.contact_idx] {
+			for &contact in world.contacts[0:world.contacts_idx] {
 				vel2 := linalg.length2(contact._relative_velocity)
 				if vel2 > fastest_speed2 {
 					fastest_speed2  = vel2
@@ -160,7 +158,7 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 			apply_impulse_change(fastest_contact, &linear_changes, &angular_changes, dt)
 
 			// Other body velocities may have changed this time
-			for &contact, i in world.contacts {
+			for &contact, i in world.contacts[0:world.contacts_idx] {
 				for contact_body, contact_body_idx in contact.bodies {
 					if contact_body == nil {continue}
 
@@ -258,7 +256,7 @@ apply_impulse_change :: proc(
 		calculate_desired_velocity(contact, dt)
 
 		contact_impulse   := Vec3{}
-		contact_impulse.x = contact._desired_delta_velocity.x / delta_velocity
+		contact_impulse.x = abs(delta_velocity) < EPS ? 0 : contact._desired_delta_velocity
 
 		impulse          := contact._world_from_contact * contact_impulse
 		impulsive_torque := linalg.cross(impulse, relative_position)
@@ -314,8 +312,11 @@ apply_position_change :: proc(
 		// The book suggests to just use a threhsold that we can tweak as needed
 		angular_limit_constraint := f32(0.5)
 
-		linear_move  := contact.penetration * linear_inertias[body_idx] / total_inertia
-		angular_move := contact.penetration * angular_inertias[body_idx] / total_inertia
+		linear_move, angular_move: f32
+		if abs(total_inertia) > EPS {
+			linear_move  = contact.penetration * linear_inertias[body_idx] / total_inertia
+			angular_move = contact.penetration * angular_inertias[body_idx] / total_inertia
+		}
 
 		if abs(angular_move) > angular_limit_constraint {
 			total_move := linear_move + angular_move
@@ -340,10 +341,12 @@ apply_position_change :: proc(
 		// Apply angular move
 		impulsive_torque := linalg.cross(relative_contact_position, contact.normal)
 		impulse_per_move := rb._inverse_inertia_tensor * impulsive_torque
-		rotation_per_move := impulse_per_move / angular_inertias[body_idx]
+		rotation_per_move := abs(angular_inertias[body_idx]) < EPS ? 0 : impulse_per_move / angular_inertias[body_idx]
 		rotation := angular_move * rotation_per_move
 
 		rb.rotation = quat_rotate_by_axis(rb.rotation, rotation)
+
+		rb_recompute_derived(rb)
 
 		angular_changes[body_idx] = rotation
 	}

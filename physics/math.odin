@@ -122,6 +122,7 @@ quat_rotate_by_axis :: proc(quat: Quat, axis: Vec3) -> Quat {
 	q.x = axis.x
 	q.y = axis.y
 	q.z = axis.z
+	q.w = 0
 
 	q = linalg.mul(q, result)
 
