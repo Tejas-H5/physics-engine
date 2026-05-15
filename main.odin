@@ -98,7 +98,7 @@ load_game_state :: proc() -> ^GameState {
 			inverse_inertia_tensor_local = physics.INFINITE_MASS_INVERSE_INERTIA_TENSOR,
 		),
 		model     = rl.LoadModelFromMesh(cube_mesh),
-		coll      = physics.collider(&item.rigidbody, physics.PlaneShape{ normal={0,1,0} }),
+		coll      = physics.collider(&item.rigidbody, physics.BoxShape{ half_size = Vec3{0.5, 0.5, 0.5} }),
 	}
 
 	state.world = physics.make_world(max_num_contacts = 1024)
@@ -180,6 +180,10 @@ run_game :: proc(state: ^GameState) {
 
 	player := &state.items[state.player_idx]
 	player.rigidbody.position += movement * dt
+
+	if state.has_input {
+		player.rigidbody.velocity = 0;
+	}
 
 	if rl.IsKeyDown(.R) { player.rigidbody.velocity = 0;  }
 

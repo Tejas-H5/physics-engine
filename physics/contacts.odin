@@ -286,21 +286,40 @@ generate_contacts_box_x_box :: proc(
 	// Or maybe it's 8, or something. whatever.
 
 	ContactAccumulator :: struct{
-		max_contacts: [8]Contact,
-		min_idx : int,
+		vertex_contacts: [4]Contact, // maximize depth
+		vertex_min_idx : int,
+		edge_contacts: [4]Contact,   // minimize depth
+		edge_min_idx : int,
 	}
 
 	acc : ContactAccumulator
+	for &contact in acc.edge_contacts {
+		contact.penetration = math.INF_F32
+	}
 
-	push_contact :: proc(acc: ^ContactAccumulator, new_contact: Contact) {
-		if new_contact.penetration < acc.max_contacts[acc.min_idx].penetration {return}
+	push_vertex_contact :: proc(acc: ^ContactAccumulator, new_contact: Contact) {
+		if new_contact.penetration < acc.vertex_contacts[acc.vertex_min_idx].penetration {return}
 		if new_contact.normal == 0 {return}
 
-		acc.max_contacts[acc.min_idx] = new_contact
+		acc.vertex_contacts[acc.vertex_min_idx] = new_contact
 
-		for &contact, i in acc.max_contacts {
-			if contact.penetration < acc.max_contacts[acc.min_idx].penetration {
-				acc.min_idx = i
+		for &contact, i in acc.vertex_contacts {
+			if contact.penetration < acc.vertex_contacts[acc.vertex_min_idx].penetration {
+				acc.vertex_min_idx = i
+			}
+		}
+	}
+
+	push_edge_contact :: proc(acc: ^ContactAccumulator, new_contact: Contact) {
+		for &contact, i in acc.edge_contacts {
+			if new_contact.penetration < contact.penetration {
+				acc.edge_contacts[i] = new_contact
+				break
+			}
+		}
+		for &contact, i in acc.edge_contacts {
+			if contact.penetration < acc.edge_contacts[acc.edge_min_idx].penetration {
+				acc.edge_min_idx = i
 			}
 		}
 	}
@@ -323,7 +342,7 @@ generate_contacts_box_x_box :: proc(
 					box_b_coll, box_b, box_b_pos,
 				)
 				if ok {
-					push_contact(acc, contact)
+					push_vertex_contact(acc, contact)
 				}
 			}
 
@@ -362,6 +381,10 @@ generate_contacts_box_x_box :: proc(
 				b_v1 := box_b_pos + box_b_half_size_oriented * edge_b[0]
 				b_v2 := box_b_pos + box_b_half_size_oriented * edge_b[1]
 
+				// NOTE: the problem with the current approach is that when two boxes slightly intersect,
+				// the most powerful axis will be a shear axis, which makes no sense. 
+				// So we'll actually need to find the shallowest edge_x_edge collision instead of the deepest.
+
 				a, ta, b, tb, are_parallel := closest_points_between_lines(a_v1, a_v2, b_v1, b_v2)
 				if !are_parallel && 0 <= ta && ta <= 1 && 0 <= tb && tb <= 1 {
 					// Check point b is closer to box a's center than point a, and vice versa
@@ -376,7 +399,7 @@ generate_contacts_box_x_box :: proc(
 							a_to_b := b - a
 							penetration := linalg.length(a_to_b)
 							normal      := a_to_b / penetration
-							push_contact(&acc, Contact{
+							push_edge_contact(&acc, Contact{
 								penetration = penetration,
 								normal      = normal,
 								position    = a + 0.5 * penetration * normal,
@@ -389,9 +412,21 @@ generate_contacts_box_x_box :: proc(
 		}
 	}
 
-	for contact in acc.max_contacts {
-		if contact.penetration == 0 {break}
+	for contact in acc.vertex_contacts {
 		if dst.contacts_idx >= len(dst.contacts) {break}
+		if contact.penetration == 0 {continue}
+		next_contact := get_next_contact(dst)
+		next_contact^ = contact
+	}
+	min_edge_pen := acc.edge_contacts[acc.edge_min_idx].penetration
+	for contact in acc.edge_contacts {
+		if dst.contacts_idx >= len(dst.contacts) {break}
+
+		if contact.penetration == 0 {continue}
+		if contact.penetration == math.INF_F32 {continue}
+		if contact.penetration > min_edge_pen {continue}
+
+
 		next_contact := get_next_contact(dst)
 		next_contact^ = contact
 	}
