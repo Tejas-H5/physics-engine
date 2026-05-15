@@ -122,22 +122,6 @@ generate_contacts_sphere_x_box :: proc(
 	sphere_pos := collider_position(sphere_coll)
 	box_pos    := collider_position(box_coll)
 
-	contact, ok := get_contact_sphere_x_box(
-		sphere_coll, sphere, sphere_pos,
-		box_coll, box, box_pos,
-	)
-
-	if ok {
-		contact_ptr := get_next_contact(dst)
-		contact_ptr^ = contact
-	}
-}
-
-// NOTE: sphere_coll may or may not be null here.
-get_contact_sphere_x_box :: proc(
-	sphere_coll: ^Collider, sphere: SphereShape, sphere_pos: Vec3,
-	box_coll: ^Collider, box: BoxShape, box_pos: Vec3,
-) -> (contact: Contact, ok: bool) {
 	sphere_pos_relative := collider_relative_pos(box_coll, sphere_pos)
 
 	if abs(sphere_pos_relative.x) - box.half_size.x > sphere.radius {return}
@@ -162,13 +146,11 @@ get_contact_sphere_x_box :: proc(
 	to_sphere := sphere_pos - closest_point
 	normal    := linalg.normalize(to_sphere)
 
-	contact.normal       = normal 
+	contact := get_next_contact(dst)
+	contact.normal       = -normal 
 	contact.penetration  = sphere.radius - math.sqrt(dist_squared)
 	contact.position     = closest_point + 0.5 * contact.penetration * contact.normal
-	contact.bodies    = { sphere_coll.rigidbody, box_coll.rigidbody }
-
-	ok = true
-	return 
+	contact.bodies       = { sphere_coll.rigidbody, box_coll.rigidbody }
 }
 
 // Almost, but not quite the same as sphere x box
@@ -333,10 +315,8 @@ generate_contacts_box_x_box :: proc(
 			box_b_coll: ^Collider, box_b: BoxShape, box_b_pos: Vec3,
 			acc: ^ContactAccumulator,
 		) {
-			box_half_size_oriented := get_box_half_size_oriented(box_a_coll, box_a)
-
-			for &corner in BOX_CORNERS {
-				vertex := box_a_pos + (box_half_size_oriented * corner)
+			for corner in BOX_CORNERS {
+				vertex := get_vertex_on_cube(box_a_coll, box_a, corner)
 
 				contact, ok := get_contact_vertex_x_box(
 					box_a_coll, vertex, box_a_pos, 
@@ -418,6 +398,13 @@ generate_contacts_box_x_box :: proc(
 }
 
 
+get_vertex_on_cube :: proc(box_coll: ^Collider, box: BoxShape, corner: Vec3) -> Vec3 {
+	// TODO: we can probably make this a lot faster
+	orientation := linalg.matrix3_from_matrix4(box_coll._transform)
+	vertex      := box_coll.rigidbody.position + orientation * (box.half_size * corner)
+	return vertex
+}
+
 @(private)
 generate_contacts_plane_x_box :: proc(
 	plane_coll: ^Collider, plane: PlaneShape,
@@ -427,13 +414,10 @@ generate_contacts_plane_x_box :: proc(
 	plane_pos := collider_position(plane_coll)
 	box_pos := collider_position(box_coll)
 
-	box_half_size_oriented := get_box_half_size_oriented(box_coll, box)
-
-	for &corner in BOX_CORNERS {
+	for corner in BOX_CORNERS {
 		if dst.contacts_idx >= len(dst.contacts) {break}
 
-		// TODO: Is it faster to unroll?
-		vertex := box_pos + (box_half_size_oriented * corner)
+		vertex := get_vertex_on_cube(box_coll, box, corner)
 		generate_contacts_plane_x_vertex(plane_coll, plane, box_coll, vertex, plane_pos, dst)
 	}
 }

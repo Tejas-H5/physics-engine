@@ -21,6 +21,8 @@ Mat4  :: linalg.Matrix4f32
 Mat3  :: linalg.Matrix3f32
 Color :: [4]f32
 
+QUAT_IDENTITY :: linalg.QUATERNIONF32_IDENTITY
+
 World :: struct {
 	contacts    : []Contact,
 	contacts_idx : int,
@@ -44,7 +46,7 @@ Rigidbody :: struct {
 
 	rotation : Quat,
 	angular_velocity, angular_acceleration : Vec3,
-	inertia_tensor_local : Mat3,
+	inverse_inertia_tensor_local : Mat3,
 	torque_accum: Vec3,
 
 	// Damping is required to remove energy added

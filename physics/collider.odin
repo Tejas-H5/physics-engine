@@ -25,10 +25,6 @@ collider_recompute_transform :: proc(coll: ^Collider) {
 	coll._transform_inverse = linalg.matrix4_inverse(coll._transform)
 }
 
-get_box_half_size_oriented :: proc(box_coll: ^Collider, box: BoxShape) -> Vec3 {
-	return box.half_size * get_box_axes(box_coll, box)
-}
-
 get_box_axes :: proc(box_coll: ^Collider, box: BoxShape) -> Vec3 {
 	return (
 		get_collider_axis(box_coll, 0) + 

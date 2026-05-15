@@ -67,11 +67,8 @@ M*Vec3{1, 0, 0}, M*Vec3{0, 1, 0}, M*Vec3{0, 0, 1}, respectively.
 Getting column 4 is equivelant to getting the translation component.
 */
 get_axis :: proc(mat: Mat4, axis: int) -> Vec3 #no_bounds_check {
-	return Vec3{
-		mat[0, axis],
-		mat[1, axis],
-		mat[2, axis],
-	}
+	// TODO: just inline - I didn't know odin had this at the time lol.
+	return mat[axis].xyz
 }
 
 // Finds the closest points between two infinite 3D lines.
@@ -113,23 +110,20 @@ closest_points_between_lines :: proc(p1, p2, p3, p4: Vec3) -> (pa: Vec3, ta: f32
 // I saw it in https://github.com/idmillington/cyclone-physics/blob/d75c8d9edeebfdc0deebe203fe862299084b1e30/include/cyclone/core.h#L512
 // (addScaledVector) so it must be right. Right? 
 quat_rotate_by_axis :: proc(quat: Quat, axis: Vec3) -> Quat {
-	// TODO: validate. 
-	// If it doesn't work, we'll need to split it to angle/axis
+	angle := linalg.length(axis)
+	axis := abs(angle) < 0.000001 ? Vec3{0, 1, 0} : axis / angle
+	axis_quat := linalg.quaternion_angle_axis(angle, axis)
 
-	result := quat
+	return axis_quat * quat
 
-	q := Quat{}
-	q.x = axis.x
-	q.y = axis.y
-	q.z = axis.z
-	q.w = 0
-
-	q = linalg.mul(q, result)
-
-	result.x += q.x * 0.5
-	result.y += q.y * 0.5
-	result.z += q.z * 0.5
-	result.w += q.w * 0.5
-
-	return result
+	// Why doesn't this work xDDD
+	// result := quat
+	//
+	// q := Quat{}
+	// q.x = axis.x
+	// q.y = axis.y
+	// q.z = axis.z
+	// q.w = 0
+	//
+	// return linalg.mul(quat, q)
 }

@@ -29,7 +29,7 @@ import "core:math/linalg"
 // At least for boxes they're zero. Will use the more and then update this wall of text
 
 
-inertia_tensor_box :: proc(half_size: Vec3, mass: f32) -> Mat3 {
+inertia_tensor_box :: proc "contextless" (half_size: Vec3, mass: f32) -> Mat3 {
 	sx := half_size.x * 2
 	sy := half_size.y * 2
 	sz := half_size.z * 2

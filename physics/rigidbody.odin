@@ -61,17 +61,21 @@ rb_integrate :: proc(rb: ^Rigidbody, dt: f32) {
 	rb_recompute_derived(rb)
 }
 
+DEFAULT_INVERSE_INERTIA_TENSOR := linalg.inverse(inertia_tensor_box({1, 1, 1 }, 1))
+INFINITE_MASS_INVERSE_INERTIA_TENSOR : Mat3 = 0
+
 rigidbody :: proc(
-	position := Vec3{0, 0, 0},
-	rotation := linalg.QUATERNIONF32_IDENTITY,
-	inverse_mass := f32(1),
+	position             := Vec3{0, 0, 0},
+	rotation             := linalg.QUATERNIONF32_IDENTITY,
+	inverse_mass         := f32(1),
+	inverse_inertia_tensor_local := DEFAULT_INVERSE_INERTIA_TENSOR, // TODO: compute this
 ) -> Rigidbody {
 	return {
 		position             = position,
 		rotation             = rotation,
 		linear_damping       = 0.995,
 		angular_damping      = 0.995,
-		inertia_tensor_local = inertia_tensor_box({1, 1, 1 }, 1), // TODO: compute this
+		inverse_inertia_tensor_local = inverse_inertia_tensor_local,
 		inverse_mass         = inverse_mass,
 	}
 }
@@ -88,8 +92,7 @@ rb_recompute_derived :: proc(rb : ^Rigidbody) {
 
 	// The implementation in the book was optimized with a code generator.
 	world_rotation       := linalg.matrix3_from_matrix4(rb._transform)
-	inertia_tensor_world := world_rotation * rb.inertia_tensor_local
-	rb._inverse_inertia_tensor = linalg.inverse(inertia_tensor_world)
+	rb._inverse_inertia_tensor = world_rotation * rb.inverse_inertia_tensor_local
 }
 
 rb_world_to_local_pos :: proc(rigidbody: ^Rigidbody, world: Vec3) -> Vec3 {

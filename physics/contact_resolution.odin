@@ -334,7 +334,7 @@ apply_position_change :: proc(
 
 		// Apply linear move
 		linear_changes[body_idx] = linear_move * contact.normal
-		contact.bodies[body_idx].position += linear_changes[body_idx]
+		rb.position += linear_changes[body_idx]
 
 		// NOTE: cyclone physics is far more complex here. 
 		// The book must not have fully explained this bit yet.
@@ -345,9 +345,8 @@ apply_position_change :: proc(
 		rotation := angular_move * rotation_per_move
 
 		rb.rotation = quat_rotate_by_axis(rb.rotation, rotation)
+		angular_changes[body_idx] = rotation
 
 		rb_recompute_derived(rb)
-
-		angular_changes[body_idx] = rotation
 	}
 }
