@@ -208,6 +208,9 @@ run_game :: proc(state: ^GameState) {
 	if rl.IsKeyDown(.P) {
 		player.rigidbody.position = {0, 4, 0}
 	}
+	if rl.IsKeyDown(.T) { // .R was taken
+		player.rigidbody.rotation = physics.QUAT_IDENTITY
+	}
 	if rl.IsKeyPressed(.S) {
 		state.slow = !state.slow
 	}
@@ -284,21 +287,31 @@ run_game :: proc(state: ^GameState) {
 				for body in contact.bodies {
 					relative_position := contact.position - body.position
 
+					// axis
+					rl.DrawLine3D(body.position, body.position + linalg.quaternion_mul_vector3(body.rotation, Vec3{1, 0, 0}), {255, 255, 255, 255})
+					rl.DrawLine3D(body.position, body.position + linalg.quaternion_mul_vector3(body.rotation, Vec3{0, 1, 0}), {255, 255, 255, 255})
+					rl.DrawLine3D(body.position, body.position + linalg.quaternion_mul_vector3(body.rotation, Vec3{0, 0, 1}), {255, 255, 255, 255})
+
 					// Relative pos
 					rl.DrawLine3D(body.position, contact.position, Color{255, 255, 0, 255})
+
+
 
 					// #0000FF This is what the angular velocity SHOULD be
 					torque_axis := linalg.cross(relative_position, contact.normal)
 					rl.DrawLine3D(body.position, body.position + torque_axis, Color{0, 0, 255, 255})
+					// #008888
+					rotation_per_unit_impulse := body._inverse_inertia_tensor * torque_axis
+					rl.DrawLine3D(body.position, body.position + rotation_per_unit_impulse, Color{0, 128, 128, 255})
 					// #FF8800 Torque-induced-velocity at point
-					velocity_from_torque := linalg.cross(torque_axis, relative_position)
-					rl.DrawLine3D(contact.position, contact.position + velocity_from_torque, Color{255, 125, 0, 255})
+					// velocity_from_torque := linalg.cross(torque_axis, relative_position)
+					// rl.DrawLine3D(contact.position, contact.position + velocity_from_torque, Color{255, 125, 0, 255})
 
 
 					// #FF00FF - linear velocity
-					rl.DrawLine3D(body.position, body.position + body.velocity, Color{255, 0, 255, 255})
+					// rl.DrawLine3D(body.position, body.position + body.velocity, Color{255, 0, 255, 255})
 					// #00FFFF - angular velocity(actual)
-					rl.DrawLine3D(body.position, body.position + body.angular_velocity, Color{0, 255, 255, 255})
+					// rl.DrawLine3D(body.position, body.position + body.angular_velocity, Color{0, 255, 255, 255})
 
 				}
 

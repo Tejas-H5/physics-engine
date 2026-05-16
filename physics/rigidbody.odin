@@ -83,17 +83,20 @@ rigidbody :: proc(
 
 // TODO: consider doing this lazily
 rb_recompute_derived :: proc(rb : ^Rigidbody) {
-	rb._transform = linalg.matrix4_from_quaternion(rb.rotation)
-	rb._transform[0, 3] = rb.position[0]
-	rb._transform[1, 3] = rb.position[1]
-// TODO: consider doing this lazily
-	rb._transform[2, 3] = rb.position[2]
+	rot_mat := linalg.matrix3_from_quaternion(rb.rotation)
+	rb._transform = linalg.matrix4_from_matrix3(rot_mat)
+	rb._transform[3].xyz = rb.position[0]
 
 	rb._transform_inverse = linalg.matrix4_inverse(rb._transform)
 
 	// The implementation in the book was optimized with a code generator.
-	world_rotation       := linalg.matrix3_from_matrix4(rb._transform)
-	rb._inverse_inertia_tensor = world_rotation * rb.inverse_inertia_tensor_local
+	// I've done the change of basis explicitly. 
+	// TODO: consider optimizing once we've gotten it working
+	// TODO: get it working
+
+	rot_mat_inverse := linalg.transpose(rot_mat)
+	middle := rb.inverse_inertia_tensor_local * rot_mat_inverse
+	rb._inverse_inertia_tensor = rot_mat * middle
 }
 
 rb_world_to_local_pos :: proc(rigidbody: ^Rigidbody, world: Vec3) -> Vec3 {

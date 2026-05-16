@@ -56,6 +56,7 @@ Rigidbody :: struct {
 
 	// Derived data
 
+	// Transform aka _world_from_model
 	_transform, _transform_inverse : Mat4,
 	_inverse_inertia_tensor: Mat3,
 }
