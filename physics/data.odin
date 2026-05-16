@@ -79,6 +79,7 @@ SphereShape :: struct {
 	radius: f32,
 }
 
+// Technically not a plane, but a half-space! Because half spaces are way more useful and also easier. 
 PlaneShape :: struct {
 	normal: Vec3,
 }

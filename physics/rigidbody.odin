@@ -61,22 +61,23 @@ rb_integrate :: proc(rb: ^Rigidbody, dt: f32) {
 	rb_recompute_derived(rb)
 }
 
-DEFAULT_INVERSE_INERTIA_TENSOR := linalg.inverse(inertia_tensor_box({1, 1, 1 }, 1))
-INFINITE_MASS_INVERSE_INERTIA_TENSOR : Mat3 = 0
+INERTIA_TENSOR_DEFAULT := linalg.inverse(inertia_tensor_box({1, 1, 1 }, 1))
+INERTIA_TENSOR_INFINITE_MASS : Mat3 = 0
+INERTIA_TENSOR_IDENTITY      : Mat3 = 1 // nice
 
 rigidbody :: proc(
 	position             := Vec3{0, 0, 0},
 	rotation             := linalg.QUATERNIONF32_IDENTITY,
 	inverse_mass         := f32(1),
-	inverse_inertia_tensor_local := DEFAULT_INVERSE_INERTIA_TENSOR, // TODO: compute this
+	inverse_inertia_tensor_local := INERTIA_TENSOR_DEFAULT, // TODO: compute this
 ) -> Rigidbody {
 	return {
 		position             = position,
 		rotation             = rotation,
-		linear_damping       = 0.995,
-		angular_damping      = 0.995,
 		inverse_inertia_tensor_local = inverse_inertia_tensor_local,
 		inverse_mass         = inverse_mass,
+		linear_damping       = 0.995,
+		angular_damping      = 0.995,
 	}
 }
 

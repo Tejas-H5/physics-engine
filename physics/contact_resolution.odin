@@ -6,6 +6,16 @@ import "core:math/linalg"
 EPS :: 0.000001
 
 /*
+
+This subsystem attempts to resolve physical collisions in a realistic manner. 
+NOTE: for most arcadey games that I want to usually make, this is not what I want.
+Instead, I just need an efficient way to find the contacts, so that I can implement 
+resolution logic myself. However, it's always useful to have a real physical 
+thing to fall back on. For example, in a racing game, I would implement the wheel_x_ground
+physics myself, but it's nice to just fall back on a real physics engine for
+the body x ground collisions.
+
+
 Usage:
 	// game update code can generate contacts
 	{
@@ -27,6 +37,8 @@ a create_collider() / destroy_collider() pair style API.
 */
 
 resolve_contacts :: proc(world: ^World, dt: f32) {
+	if world.contacts_idx == 0 {return}
+
 	// prepare the contacts
 	{
 		for &contact in world.contacts[0:world.contacts_idx] {
@@ -36,8 +48,8 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 			}
 			assert(contact.bodies[0] != nil)
 
-			contact._world_from_contact = make_orthonormal_basis(contact.normal)
-			contact._contact_from_world = linalg.transpose(contact._world_from_contact)
+			contact._contact_from_world = make_orthonormal_basis(contact.normal)
+			contact._world_from_contact = linalg.transpose(contact._world_from_contact)
 			
 			// Slightly different from the book - 
 			// I (mis?)understood the contact point to be on the edge of the collider,
@@ -91,18 +103,19 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 		angular_changes : [2]Vec3
 
 		last_contact : ^Contact
-		POSITION_ITERATIONS :: 1000
+		POSITION_ITERATIONS :: 1
 		for i in 0..<POSITION_ITERATIONS {
-			worst_contact     : ^Contact
+			worst_contact_idx := -1
 			worst_penetration : f32
-			for &contact in world.contacts[0:world.contacts_idx] {
+			for &contact, i in world.contacts[0:world.contacts_idx] {
 				if contact.penetration > worst_penetration {
-					worst_contact     = &contact
+					worst_contact_idx = i
 					worst_penetration = contact.penetration
 				}
 			}
 
-			if worst_contact == nil {break}
+			if worst_contact_idx == -1 {break}
+			worst_contact := &world.contacts[worst_contact_idx]
 
 			// TODO: Match the awake state at the contact. (What is this?)
 
@@ -118,12 +131,14 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 					for &worst_contact_body, worst_contact_body_idx in worst_contact.bodies {
 						if contact_body != worst_contact_body {continue}
 
-						cp := linalg.cross(
+						angular_adjustment := linalg.cross(
 							angular_changes[worst_contact_body_idx], 
 							contact._relative_contact_positions[contact_body_idx]
 						)
 
-						cp += linear_changes[worst_contact_body_idx]
+						linear_adjustment := linear_changes[worst_contact_body_idx]
+
+						cp := linear_adjustment + angular_adjustment
 
 						// This is negative for the first body - we reducing the penetration.
 						contact.penetration += 
@@ -137,7 +152,7 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 
 	// TODO: Wait should this be happening first? and in the same loop??
 	// Resolve velocity OMG it just never ends bro wtf
-	if false {
+	{
 		linear_changes  : [2]Vec3
 		angular_changes : [2]Vec3
 
@@ -155,7 +170,7 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 
 			if fastest_contact == nil {break}
 
-			apply_impulse_change(fastest_contact, &linear_changes, &angular_changes, dt)
+			apply_velocity_change(fastest_contact, &linear_changes, &angular_changes, dt)
 
 			// Other body velocities may have changed this time
 			for &contact, i in world.contacts[0:world.contacts_idx] {
@@ -173,9 +188,11 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 						cp += linear_changes[fastest_contact_body_idx]
 
 						// The second body negative.
-						contact.penetration += 
+						contact._desired_delta_velocity += 
 							(contact_body_idx == 0 ? 1 : -1) *
 							linalg.dot(cp, contact.normal)
+
+						calculate_desired_velocity(&contact, dt)
 					}
 				}
 			}
@@ -205,7 +222,7 @@ calculate_desired_velocity :: proc(contact: ^Contact, dt: f32) {
 		-restitution * (contact._relative_velocity.x - velocity_from_acceleration)
 }
 
-apply_impulse_change :: proc(
+apply_velocity_change :: proc(
 	contact: ^Contact,
 	linear_changes: ^[2]Vec3,
 	angular_changes: ^[2]Vec3,
@@ -232,7 +249,7 @@ apply_impulse_change :: proc(
 			// > It is better, in my opinion, to think in terms of the change of coordinates, because
 			// > as we introduce friction in the next chapter, the simple scalar product trick can no
 			// > longer be used.
-			contact_velocity_per_unit_impulse = 
+			contact_velocity_per_unit_impulse += 
 				(contact._contact_from_world * rotation_per_unit_impulse).x
 		}
 
@@ -249,11 +266,9 @@ apply_impulse_change :: proc(
 		if rb == nil {continue}
 
 		relative_position := contact._relative_contact_positions[body_idx]
-
-		velocity := linalg.cross(rb.angular_velocity, relative_position) + rb.velocity
+		velocity_at_relative_position := linalg.cross(rb.angular_velocity, relative_position) + rb.velocity
 			
-		contact._relative_velocity = contact._contact_from_world * velocity
-		calculate_desired_velocity(contact, dt)
+		contact._relative_velocity = contact._contact_from_world * velocity_at_relative_position
 
 		contact_impulse   := Vec3{}
 		contact_impulse.x = abs(delta_velocity) < EPS ? 0 : contact._desired_delta_velocity
@@ -334,7 +349,12 @@ apply_position_change :: proc(
 
 		// Apply linear move
 		linear_changes[body_idx] = linear_move * contact.normal
+
+		assert(linear_changes[body_idx].x < 100000)
+		assert(linear_changes[body_idx].x > -100000)
+
 		rb.position += linear_changes[body_idx]
+
 
 		// NOTE: cyclone physics is far more complex here. 
 		// The book must not have fully explained this bit yet.
