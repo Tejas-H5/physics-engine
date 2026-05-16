@@ -5,6 +5,8 @@ import "core:math/linalg"
 
 EPS :: 0.000001
 
+RESTITUTION := 0.1 // TODO: make this configurable. I think it's the 'bounce'
+
 /*
 
 This subsystem attempts to resolve physical collisions in a realistic manner. 
@@ -39,17 +41,19 @@ a create_collider() / destroy_collider() pair style API.
 resolve_contacts :: proc(world: ^World, dt: f32) {
 	if world.contacts_idx == 0 {return}
 
+	all_contacts := world.contacts[0:world.contacts_idx]
+
 	// prepare the contacts
 	{
-		for &contact in world.contacts[0:world.contacts_idx] {
+		for &contact in all_contacts {
 			if contact.bodies[0] == nil {
 				contact.bodies[0], contact.bodies[1] = contact.bodies[1], contact.bodies[0]
 				contact.normal = -contact.normal
 			}
 			assert(contact.bodies[0] != nil)
 
-			contact._contact_from_world = make_orthonormal_basis(contact.normal)
-			contact._world_from_contact = linalg.transpose(contact._world_from_contact)
+			contact._world_from_contact = make_orthonormal_basis(contact.normal)
+			contact._contact_from_world = linalg.transpose(contact._world_from_contact)
 			
 			// Slightly different from the book - 
 			// I (mis?)understood the contact point to be on the edge of the collider,
@@ -62,29 +66,7 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 				contact._relative_contact_positions[1] = contact.position - contact.bodies[1].position
 			}
 
-			// This part only works because we have a single contact.position in between
-			// the overlap of the two rigidbodies rather than 2 contact.positions
-			// on the edges of the two colliders (which is what looks right in my head 
-			// but it's not how it's done in practice)
-			contact._relative_velocity = get_contact_relative_velocity(&contact, 0)
-			if contact.bodies[1] != nil {
-				contact._relative_velocity -= get_contact_relative_velocity(&contact, 1)
-			}
-			get_contact_relative_velocity :: proc(contact: ^Contact, body_idx: int) -> Vec3 {
-				rb := contact.bodies[body_idx]
-
-				velocity_linear := rb.velocity
-
-				// TODO: i forgot which way around this was supposed to be. It Does matter
-				velocity_angular := linalg.cross(
-					rb.angular_velocity,
-					contact._relative_contact_positions[body_idx], 
-				)
-
-				total_velocity := velocity_linear + velocity_angular
-				contact_total_velocity := contact._contact_from_world * total_velocity
-				return contact_total_velocity
-			}
+			calculate_contact_relative_velocities(&contact)
 
 			calculate_desired_velocity(&contact, dt)
 		}
@@ -107,7 +89,7 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 		for i in 0..<POSITION_ITERATIONS {
 			worst_contact_idx := -1
 			worst_penetration : f32
-			for &contact, i in world.contacts[0:world.contacts_idx] {
+			for &contact, i in all_contacts {
 				if contact.penetration > worst_penetration {
 					worst_contact_idx = i
 					worst_penetration = contact.penetration
@@ -124,7 +106,7 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 			apply_position_change(worst_contact, &linear_changes, &angular_changes)
 
 			// May have changed the penetration of other bodies, so we update the contacts
-			for &contact, i in world.contacts[0:world.contacts_idx] {
+			for &contact, i in all_contacts {
 				for contact_body, contact_body_idx in contact.bodies {
 					if contact_body == nil {continue}
 
@@ -160,7 +142,7 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 		for i in 0..<VELOCITY_ITERATIONS {
 			fastest_contact : ^Contact
 			fastest_speed2 : f32
-			for &contact in world.contacts[0:world.contacts_idx] {
+			for &contact in all_contacts {
 				vel2 := linalg.length2(contact._relative_velocity)
 				if vel2 > fastest_speed2 {
 					fastest_speed2  = vel2
@@ -173,7 +155,7 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 			apply_velocity_change(fastest_contact, &linear_changes, &angular_changes, dt)
 
 			// Other body velocities may have changed this time
-			for &contact, i in world.contacts[0:world.contacts_idx] {
+			for &contact, i in all_contacts {
 				for contact_body, contact_body_idx in contact.bodies {
 					if contact_body == nil {continue}
 
@@ -211,7 +193,7 @@ calculate_desired_velocity :: proc(contact: ^Contact, dt: f32) {
 
 	// If the velocity is very slow, limit the restitution
 	velocity_limit := f32(0.0001)
-	restitution := f32(0.1) // TODO: make this configurable. I think it's the 'bounce'
+	restitution := f32(RESTITUTION)
 	if abs(contact._relative_velocity.x) < velocity_limit {
 		// TODO: wait actually we dont have restitution yet. Stil not sure wtf it is
 		restitution = 0
@@ -266,15 +248,12 @@ apply_velocity_change :: proc(
 		if rb == nil {continue}
 
 		relative_position := contact._relative_contact_positions[body_idx]
-		velocity_at_relative_position := linalg.cross(rb.angular_velocity, relative_position) + rb.velocity
-			
-		contact._relative_velocity = contact._contact_from_world * velocity_at_relative_position
 
 		contact_impulse   := Vec3{}
-		contact_impulse.x = abs(delta_velocity) < EPS ? 0 : contact._desired_delta_velocity
+		contact_impulse.x = contact._desired_delta_velocity
 
 		impulse          := contact._world_from_contact * contact_impulse
-		impulsive_torque := linalg.cross(impulse, relative_position)
+		impulsive_torque := linalg.cross(relative_position, impulse)
 
 		sign : f32 = body_idx == 0 ? 1 : -1
 		velocity_change         := rb.inverse_mass * impulse * sign
@@ -287,6 +266,8 @@ apply_velocity_change :: proc(
 		rb.velocity         += velocity_change
 		rb.angular_velocity += angular_velocity_change
 	}
+
+	calculate_contact_relative_velocities(contact)
 }
 
 apply_position_change :: proc(
@@ -368,5 +349,30 @@ apply_position_change :: proc(
 		angular_changes[body_idx] = rotation
 
 		rb_recompute_derived(rb)
+	}
+}
+
+calculate_contact_relative_velocities :: proc(contact: ^Contact) {
+	// This part only works because we have a single contact.position in between
+	// the overlap of the two rigidbodies rather than 2 contact.positions
+	// on the edges of the two colliders (which is what looks right in my head 
+	// but it's not how it's done in practice)
+
+	contact._relative_velocity = 0
+	for rb, body_idx in contact.bodies {
+		if rb == nil {continue}
+
+		velocity_linear := rb.velocity
+
+		// TODO: i forgot which way around this was supposed to be. It Does matter
+		velocity_angular := linalg.cross(
+			rb.angular_velocity,
+			contact._relative_contact_positions[body_idx], 
+		)
+
+		total_velocity := velocity_linear + velocity_angular
+		sign := f32(body_idx == 0 ? 1 : -1)
+		transformed := contact._contact_from_world * total_velocity
+		contact._relative_velocity += sign * transformed
 	}
 }

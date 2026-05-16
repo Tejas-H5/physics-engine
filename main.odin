@@ -50,7 +50,7 @@ load_game_state :: proc() -> ^GameState {
 	cube_mesh := rl.GenMeshCube(1, 1, 1)
 	sphere_mesh := rl.GenMeshSphere(0.5, 64, 64)
 
-	state.items = make([]Item, 2)
+	state.items = make([]Item, 3)
 
 	// Cubes
 	item := &state.items[0]
@@ -65,17 +65,21 @@ load_game_state :: proc() -> ^GameState {
 		coll      = physics.collider(
 			&item.rigidbody,
 			physics.BoxShape{half_size = Vec3{0.5, 0.5, 0.5}},
+			// physics.SphereShape{radius = 0.5},
 		),
 	}
 
-	// item = &state.items[1]
-	// item^ = Item{
-	// 	size      = {1,1,1},
-	// 	color     = {255, 0, 0, 50},
-	// 	rigidbody = physics.rigidbody(position={2, 1, 0}),
-	// 	model     = rl.LoadModelFromMesh(cube_mesh),
-	// 	coll      = physics.collider(&item.rigidbody, physics.BoxShape{ half_size = Vec3{1, 1, 1} / 2 }),
-	// }
+	item = &state.items[1]
+	item^ = Item{
+		size      = {1,1,1},
+		color     = {255, 0, 0, 50},
+		rigidbody = physics.rigidbody(
+			position = {2, 3, 0},
+			inverse_inertia_tensor_local = physics.INERTIA_TENSOR_IDENTITY,
+		),
+		model     = rl.LoadModelFromMesh(cube_mesh),
+		coll      = physics.collider(&item.rigidbody, physics.BoxShape{ half_size = Vec3{1, 1, 1} / 2 }),
+	}
 
 	// Sphere
 
@@ -88,7 +92,7 @@ load_game_state :: proc() -> ^GameState {
 	// 	coll      = physics.collider(&item.rigidbody, physics.SphereShape{ radius = 0.5 }),
 	// }
 
-	item = &state.items[1]
+	item = &state.items[2]
 	item^ = Item {
 		size      = {1, 1, 1},
 		color     = {255, 0, 0, 50},
@@ -255,6 +259,22 @@ run_game :: proc(state: ^GameState) {
 
 			rl.DrawGrid(64, 64)
 
+
+			// Test orthonormal basis
+			{
+				mat := physics.make_orthonormal_basis(player.rigidbody.position)
+
+				x_axis := mat * Vec3{10, 0, 0}
+				y_axis := mat * Vec3{0, 10, 0}
+				z_axis := mat * Vec3{0, 0, 10}
+				rl.DrawLine3D({0, 0, 0}, x_axis, {255,0 ,0, 255})
+				rl.DrawLine3D({0, 0, 0}, y_axis, {0, 255 ,0, 255})
+				rl.DrawLine3D({0, 0, 0}, z_axis, {0,0 ,255, 255})
+			}
+
+
+
+
 			for &item in state.items {
 				angle, axis := linalg.angle_axis_from_quaternion(item.rigidbody.rotation)
 				rl.DrawModelEx(
@@ -272,46 +292,38 @@ run_game :: proc(state: ^GameState) {
 			for idx in 0 ..< state.world.contacts_idx {
 				contact := &state.world.contacts[idx]
 
+				x_axis := Vec3{10,0,0}
+				in_contact_space := contact._world_from_contact * x_axis
+				rl.DrawLine3D(contact.position, contact.position + in_contact_space, {0, 255,255,255})
 
-				rl.DrawLine3D(
-					contact.position,
-					contact.position + 1 * contact.normal,
-					Color{0, 255, 0, 255},
-				)
-				rl.DrawLine3D(
-					contact.position,
-					contact.position + contact.penetration * contact.normal,
-					Color{255, 0, 0, 255},
-				)
+				in_world_space := contact._contact_from_world * in_contact_space
+				rl.DrawLine3D(contact.position, contact.position + in_world_space, {255, 0, 0, 255})
+				// rl.DrawLine3D(contact.position, contact.position + 10 * contact.normal, {0, 255,0,255})
+
+
+				// rl.DrawLine3D(
+				// 	contact.position,
+				// 	contact.position + 1 * contact.normal,
+				// 	Color{0, 255, 0, 255},
+				// )
+				// rl.DrawLine3D(
+				// 	contact.position,
+				// 	contact.position + contact.penetration * contact.normal,
+				// 	Color{255, 0, 0, 255},
+				// )
 
 				for body in contact.bodies {
 					relative_position := contact.position - body.position
-
-					// axis
-					rl.DrawLine3D(body.position, body.position + linalg.quaternion_mul_vector3(body.rotation, Vec3{1, 0, 0}), {255, 255, 255, 255})
-					rl.DrawLine3D(body.position, body.position + linalg.quaternion_mul_vector3(body.rotation, Vec3{0, 1, 0}), {255, 255, 255, 255})
-					rl.DrawLine3D(body.position, body.position + linalg.quaternion_mul_vector3(body.rotation, Vec3{0, 0, 1}), {255, 255, 255, 255})
-
-					// Relative pos
-					rl.DrawLine3D(body.position, contact.position, Color{255, 255, 0, 255})
-
 
 
 					// #0000FF This is what the angular velocity SHOULD be
 					torque_axis := linalg.cross(relative_position, contact.normal)
 					rl.DrawLine3D(body.position, body.position + torque_axis, Color{0, 0, 255, 255})
-					// #008888
-					rotation_per_unit_impulse := body._inverse_inertia_tensor * torque_axis
-					rl.DrawLine3D(body.position, body.position + rotation_per_unit_impulse, Color{0, 128, 128, 255})
-					// #FF8800 Torque-induced-velocity at point
-					// velocity_from_torque := linalg.cross(torque_axis, relative_position)
-					// rl.DrawLine3D(contact.position, contact.position + velocity_from_torque, Color{255, 125, 0, 255})
 
-
-					// #FF00FF - linear velocity
-					// rl.DrawLine3D(body.position, body.position + body.velocity, Color{255, 0, 255, 255})
 					// #00FFFF - angular velocity(actual)
-					// rl.DrawLine3D(body.position, body.position + body.angular_velocity, Color{0, 255, 255, 255})
+					rl.DrawLine3D(body.position, body.position + body.angular_velocity, Color{0, 255, 255, 255})
+					
+					rl.DrawLine3D(body.position, body.position + contact._desired_delta_velocity * contact.normal, Color{255, 0, 0, 255})
 
 				}
 

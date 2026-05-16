@@ -23,6 +23,8 @@ vec3_to_vec4 :: proc(p: Vec3) -> Vec4 {
 // NOTE: This matrix effectively represents a change in rotation, with no scaling or skewing.
 // This means you can multiply by it's transpose (just use a different proc, no need to compute the transpose or anything) to get the inverse transformation.
 make_orthonormal_basis :: proc(normal: Vec3) -> Mat3 {
+	normal := linalg.normalize0(normal)
+
 	tangent2, tangent1: Vec3
 
 	// Use projecting to a plane and -y/x trick to get a perpendicular vector.

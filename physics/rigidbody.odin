@@ -76,8 +76,8 @@ rigidbody :: proc(
 		rotation             = rotation,
 		inverse_inertia_tensor_local = inverse_inertia_tensor_local,
 		inverse_mass         = inverse_mass,
-		linear_damping       = 0.995,
-		angular_damping      = 0.995,
+		linear_damping       = 1, //0.995,
+		angular_damping      = 1, //0.995,
 	}
 }
 
@@ -85,7 +85,7 @@ rigidbody :: proc(
 rb_recompute_derived :: proc(rb : ^Rigidbody) {
 	rot_mat := linalg.matrix3_from_quaternion(rb.rotation)
 	rb._transform = linalg.matrix4_from_matrix3(rot_mat)
-	rb._transform[3].xyz = rb.position[0]
+	rb._transform[3].xyz = rb.position
 
 	rb._transform_inverse = linalg.matrix4_inverse(rb._transform)
 
