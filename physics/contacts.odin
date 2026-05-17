@@ -288,9 +288,9 @@ generate_contacts_box_x_box :: proc(
 	// Or maybe it's 8, or something. whatever.
 
 	ContactAccumulator :: struct{
-		vertex_contacts: [8]Contact, // maximize depth
+		vertex_contacts: [1]Contact, // maximize depth
 		vertex_min_idx : int,
-		edge_contacts: [8]Contact,   // minimize depth
+		edge_contacts: [1]Contact,   // minimize depth
 		edge_min_idx : int,
 	}
 
@@ -423,11 +423,9 @@ generate_contacts_box_x_box :: proc(
 	min_edge_pen := acc.edge_contacts[acc.edge_min_idx].penetration
 	for contact in acc.edge_contacts {
 		if dst.contacts_idx >= len(dst.contacts) {break}
-
 		if contact.penetration == 0 {continue}
 		if contact.penetration == math.INF_F32 {continue}
 		if contact.penetration > min_edge_pen {continue}
-
 
 		next_contact := get_next_contact(dst)
 		next_contact^ = contact

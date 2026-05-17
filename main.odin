@@ -69,11 +69,9 @@ load_game_state :: proc() -> ^GameState {
 		case physics.BoxShape: 
 			item.model = rl.LoadModelFromMesh(state.cube_mesh)
 			item.rigidbody.inverse_inertia_tensor_local = physics.inertia_tensor_box(val.half_size, 1)
-			// TODO: box inertia tensor
 		case physics.SphereShape: 
 			item.model = rl.LoadModelFromMesh(state.sphere_mesh)
 			item.rigidbody.inverse_inertia_tensor_local = physics.inertia_tensor_sphere(val.radius, 1)
-			// TODO: sphere inertia tensor
 		case physics.PlaneShape:
 			item.rigidbody.inverse_inertia_tensor_local = physics.INERTIA_TENSOR_INFINITE_MASS
 			item.rigidbody.inverse_mass = 0
@@ -82,12 +80,14 @@ load_game_state :: proc() -> ^GameState {
 		return item
 	}
 
-	add_item(state, {0, 1, 0}, physics.BoxShape{half_size={0.5, 0.5, 0.5}})
-	add_item(state, {0, 0, 0}, physics.PlaneShape{normal={0, 1, 0}})
-	add_item(state, {0, 4, 0}, physics.BoxShape{half_size={0.5, 0.5, 0.5}})
+	// add_item(state, {0, 1, 0}, physics.BoxShape{half_size={0.5, 0.5, 0.5}})
+	add_item(state, {0, 4, 0}, physics.SphereShape{radius=0.5})
 	add_item(state, {2, 4, 0}, physics.SphereShape{radius=0.5})
-	add_item(state, {4, 4, 0}, physics.SphereShape{radius=0.5})
 
+	// add_item(state, {0, 4, 0}, physics.BoxShape{half_size={0.5, 0.5, 0.5}})
+	// add_item(state, {4, 4, 0}, physics.SphereShape{radius=0.5})
+
+	add_item(state, {0, 0, 0}, physics.PlaneShape{normal={0, 1, 0}})
 	state.world = physics.make_world(max_num_contacts = 1024)
 
 	return state

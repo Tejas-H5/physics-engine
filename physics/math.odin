@@ -129,3 +129,20 @@ quat_rotate_by_axis :: proc(quat: Quat, axis: Vec3) -> Quat {
 	//
 	// return linalg.mul(quat, q)
 }
+
+/*
+A matrix-multiplication representation of cross product.
+skew_symmetric(relative_pos) * contact_normal == relative_pos x contact_normal
+
+However, the cool think about the matrix, is that you can use it to cross the entire orthonormal basis: 
+skew_symmetric(relative_pos) * world_from_contact
+*/
+skew_symmetric :: proc(vec: Vec3) -> Mat3 {
+	x, y, z := vec.x, vec.y, vec.z
+
+	return Mat3{
+		 0, -z,  y,
+		 z,  0, -z,
+		-y,  x,  0,
+	}
+}

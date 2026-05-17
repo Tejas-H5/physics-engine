@@ -76,8 +76,8 @@ rigidbody :: proc(
 		rotation             = rotation,
 		inverse_inertia_tensor_local = inverse_inertia_tensor_local,
 		inverse_mass         = inverse_mass,
-		linear_damping       = 1, //0.995,
-		angular_damping      = 1, //0.995,
+		linear_damping       = 0.995,
+		angular_damping      = 0.995,
 	}
 }
 

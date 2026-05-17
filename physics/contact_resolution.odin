@@ -5,7 +5,8 @@ import "core:math/linalg"
 
 EPS :: 0.000001
 
-RESTITUTION := 0.1 // TODO: make this configurable. I think it's the 'bounce'
+RESTITUTION := 0.0 // TODO: make this configurable. I think it's the 'bounce'
+FRICTION := 0.2
 
 /*
 
@@ -185,8 +186,7 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 }
 
 calculate_desired_velocity :: proc(contact: ^Contact, dt: f32) {
-	velocity_from_acceleration := 
-		linalg.dot(contact.bodies[0].acceleration_last_frame, dt * contact.normal)
+	velocity_from_acceleration := linalg.dot(contact.bodies[0].acceleration_last_frame, dt * contact.normal)
 
 	if contact.bodies[1] != nil {
 		velocity_from_acceleration -=
@@ -212,47 +212,78 @@ apply_velocity_change :: proc(
 	angular_changes: ^[2]Vec3,
 	dt: f32,
 ) {
-	delta_velocity := f32(0)
+	impulse_to_torque := skew_symmetric(contact._relative_contact_positions[0])
 
-	for rb, body_idx in contact.bodies {
-		if rb == nil {continue}
+	// TODO: try to understand how this works
+	delta_vel_world := impulse_to_torque
+	delta_vel_world *= contact.bodies[0]._inverse_inertia_tensor
+	delta_vel_world *= impulse_to_torque
+	delta_vel_world *= -1
 
-		relative_contact_position := contact._relative_contact_positions[body_idx]
+	inverse_mass := contact.bodies[0].inverse_mass
 
-		contact_velocity_per_unit_impulse : f32
+	if contact.bodies[1] != nil {
+		impulse_to_torque := skew_symmetric(contact._relative_contact_positions[1])
+		delta_vel_world_2 := impulse_to_torque
+		delta_vel_world_2 *= contact.bodies[1]._inverse_inertia_tensor
+		delta_vel_world_2 *= impulse_to_torque
+		delta_vel_world_2 *= -1
 
-		// Rotational component
-		{
-			torque_per_unit_impulse := 
-				linalg.cross(relative_contact_position, contact.normal)
-			rotation_per_unit_impulse := 
-				rb._inverse_inertia_tensor * torque_per_unit_impulse
-			velocity_per_unit_impulse := 
-				linalg.cross(rotation_per_unit_impulse, relative_contact_position)
+		delta_vel_world += delta_vel_world_2
+		inverse_mass    += contact.bodies[1].inverse_mass
+	}
 
-			// > It is better, in my opinion, to think in terms of the change of coordinates, because
-			// > as we introduce friction in the next chapter, the simple scalar product trick can no
-			// > longer be used.
-			contact_velocity_per_unit_impulse += 
-				(contact._contact_from_world * rotation_per_unit_impulse).x
-		}
+	// Change of basis to convert into contact coordinates.
+	delta_velocity := contact._contact_from_world
+	delta_velocity *= delta_vel_world
+	delta_velocity *= contact._world_from_contact
 
-		// linear component
-		{
-			// xd
-			contact_velocity_per_unit_impulse += rb.inverse_mass
-		}
+	// Also account for linear velocity. I'm surprised it works after the change of basis tbh
+	delta_velocity[0, 0] += inverse_mass
+	delta_velocity[1, 1] += inverse_mass
+	delta_velocity[2, 2] += inverse_mass
 
-		delta_velocity += contact_velocity_per_unit_impulse
+	impulse_matrix := linalg.inverse(delta_velocity)
+
+	// TODO: We are not handling static friction properly yet!!
+	velocity_to_kill := Vec3{
+		contact._desired_delta_velocity, 
+		-contact._relative_velocity.y,
+		-contact._relative_velocity.z,
+	}
+
+	contact_impulse := impulse_matrix * velocity_to_kill
+
+	planar_impulse := math.sqrt(
+		contact_impulse.y * contact_impulse.y +
+		contact_impulse.z * contact_impulse.z
+	)
+
+	// TODO: lookup table of materials, probably. idk.
+	friction := f32(FRICTION)
+
+	use_dynamic_friction := planar_impulse > contact_impulse.x * friction
+	if use_dynamic_friction {
+		contact_impulse.y /= planar_impulse
+		contact_impulse.z /= planar_impulse
+
+		// TODO: validate we're pulling from the matrix correctly
+		contact_impulse.x = 
+			delta_velocity[0,0] +
+			delta_velocity[0,1] + friction * contact_impulse.y +
+			delta_velocity[0,2] + friction * contact_impulse.z
+		contact_impulse.x = contact._desired_delta_velocity / contact_impulse.x
+
+		// This is from the formula for dynamic friction.
+		// dynamic_friction = -velocity * friction_coefficent * normal_force (i.e contact_impulse.x)
+		contact_impulse.y *= friction * contact_impulse.x
+		contact_impulse.z *= friction * contact_impulse.x
 	}
 
 	for rb, body_idx in contact.bodies {
 		if rb == nil {continue}
 
 		relative_position := contact._relative_contact_positions[body_idx]
-
-		contact_impulse   := Vec3{}
-		contact_impulse.x = contact._desired_delta_velocity
 
 		impulse          := contact._world_from_contact * contact_impulse
 		impulsive_torque := linalg.cross(relative_position, impulse)
