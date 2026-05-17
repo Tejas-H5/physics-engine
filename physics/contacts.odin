@@ -212,6 +212,8 @@ get_contact_vertex_x_box :: proc(
 
 // This is the final boss of collision detection tutorial level. If you can code this, then you are allowed to write a physic engine :D
 
+// TODO: fix
+
 @(private)
 generate_contacts_box_x_box :: proc(
 	box_a_coll: ^Collider, box_a: BoxShape,
@@ -286,9 +288,9 @@ generate_contacts_box_x_box :: proc(
 	// Or maybe it's 8, or something. whatever.
 
 	ContactAccumulator :: struct{
-		vertex_contacts: [4]Contact, // maximize depth
+		vertex_contacts: [8]Contact, // maximize depth
 		vertex_min_idx : int,
-		edge_contacts: [4]Contact,   // minimize depth
+		edge_contacts: [8]Contact,   // minimize depth
 		edge_min_idx : int,
 	}
 
@@ -396,13 +398,13 @@ generate_contacts_box_x_box :: proc(
 							// The position of the contact in world coordinates.
 							// When both bodies are specified, it is only mid-way between the inter-penetrating points
 
-							a_to_b := b - a
-							penetration := linalg.length(a_to_b)
-							normal      := a_to_b / penetration
+							b_to_a := b - a
+							penetration := linalg.length(b_to_a)
+							normal      := b_to_a / penetration
 							push_edge_contact(&acc, Contact{
 								penetration = penetration,
 								normal      = normal,
-								position    = a + 0.5 * penetration * normal,
+								position    = b + 0.5 * penetration * normal,
 								bodies   = { box_a_coll.rigidbody, box_b_coll.rigidbody, },
 							})
 						}

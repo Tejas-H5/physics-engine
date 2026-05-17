@@ -85,7 +85,8 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 		angular_changes : [2]Vec3
 
 		last_contact : ^Contact
-		POSITION_ITERATIONS :: 1
+		// TODO: 1000
+		POSITION_ITERATIONS :: 10
 		for i in 0..<POSITION_ITERATIONS {
 			worst_contact_idx := -1
 			worst_penetration : f32
@@ -138,14 +139,15 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 		linear_changes  : [2]Vec3
 		angular_changes : [2]Vec3
 
-		VELOCITY_ITERATIONS :: 1
+		// TODO: 1000
+		VELOCITY_ITERATIONS :: 5
 		for i in 0..<VELOCITY_ITERATIONS {
 			fastest_contact : ^Contact
-			fastest_speed2 : f32
+			fastest_speed : f32 = 0 // negative means the contacts are seperating, we dont need to worry about those
 			for &contact in all_contacts {
-				vel2 := linalg.length2(contact._relative_velocity)
-				if vel2 > fastest_speed2 {
-					fastest_speed2  = vel2
+				closing_vel := -contact._relative_velocity.x
+				if closing_vel > fastest_speed {
+					fastest_speed  = closing_vel
 					fastest_contact = &contact
 				}
 			}
