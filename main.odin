@@ -23,11 +23,13 @@ GameState :: struct {
 	last_monitor:             c.int,
 	camera:                   rl.Camera,
 	camera_offset, camera_up: Vec3,
-	items:                    []Item,
+	items:                    [dynamic; 10]Item,
 	player_idx:               int,
 	world:                    physics.World,
 	disable_physics:    bool,
 	slow: bool,
+
+	cube_mesh, sphere_mesh: rl.Mesh,
 }
 
 Item :: struct {
@@ -47,74 +49,44 @@ load_game_state :: proc() -> ^GameState {
 	state.camera_up = {0, 1, 0}
 	state.last_monitor = -1
 
-	cube_mesh := rl.GenMeshCube(1, 1, 1)
-	sphere_mesh := rl.GenMeshSphere(0.5, 64, 64)
+	state.cube_mesh   = rl.GenMeshCube(1, 1, 1)
+	state.sphere_mesh = rl.GenMeshSphere(0.5, 64, 64)
 
-	state.items = make([]Item, 3)
+	add_item :: proc(state: ^GameState, position: Vec3, shape: physics.ColliderShape) -> ^Item {
+		idx := len(state.items)
+		append(&state.items, Item{})
+		item := &state.items[idx]
 
-	// Cubes
-	item := &state.items[0]
-	item^ = Item {
-		size      = {1, 1, 1},
-		color     = {255, 0, 0, 50},
-		rigidbody = physics.rigidbody(
-			position = {0, 1, 0},
+		item.size = {1, 1, 1}
+		item.color = {255, 0, 0, 50}
+		item.rigidbody = physics.rigidbody(
+			position = position,
 			inverse_inertia_tensor_local = physics.INERTIA_TENSOR_IDENTITY,
-		),
-		// model     = rl.LoadModelFromMesh(cube_mesh),
-		model     = rl.LoadModelFromMesh(sphere_mesh),
-		coll      = physics.collider(
-			&item.rigidbody,
-			// physics.BoxShape{half_size = Vec3{0.5, 0.5, 0.5}},
-			physics.SphereShape{radius = 0.5},
-		),
+		)
+		item.coll = physics.collider(&item.rigidbody, shape)
+
+		switch val in shape {
+		case physics.BoxShape: 
+			item.model = rl.LoadModelFromMesh(state.cube_mesh)
+			item.rigidbody.inverse_inertia_tensor_local = physics.inertia_tensor_box(val.half_size, 1)
+			// TODO: box inertia tensor
+		case physics.SphereShape: 
+			item.model = rl.LoadModelFromMesh(state.sphere_mesh)
+			item.rigidbody.inverse_inertia_tensor_local = physics.inertia_tensor_sphere(val.radius, 1)
+			// TODO: sphere inertia tensor
+		case physics.PlaneShape:
+			item.rigidbody.inverse_inertia_tensor_local = physics.INERTIA_TENSOR_INFINITE_MASS
+			item.rigidbody.inverse_mass = 0
+		}
+
+		return item
 	}
 
-	item = &state.items[1]
-	item^ = Item{
-		size      = {1,1,1},
-		color     = {255, 0, 0, 50},
-		rigidbody = physics.rigidbody(
-			position = {0, 3, 0},
-			inverse_inertia_tensor_local = physics.INERTIA_TENSOR_IDENTITY,
-		),
-		// model     = rl.LoadModelFromMesh(cube_mesh),
-		model     = rl.LoadModelFromMesh(sphere_mesh),
-		coll      = physics.collider(
-			&item.rigidbody,
-			// physics.BoxShape{ half_size = Vec3{1, 1, 1} / 2 }
-			physics.SphereShape{radius = 0.5},
-		),
-	}
-
-	// Sphere
-
-	// item := &state.items[0]
-	// item^ = Item{
-	// 	size      = {1,1,1},
-	// 	color     = {255, 0, 0, 50},
-	// 	rigidbody = physics.rigidbody(position={0, 3, 0}),
-	// 	model     = rl.LoadModelFromMesh(sphere_mesh),
-	// 	coll      = physics.collider(&item.rigidbody, physics.SphereShape{ radius = 0.5 }),
-	// }
-
-	item = &state.items[2]
-	item^ = Item {
-		size      = {1, 1, 1},
-		color     = {255, 0, 0, 50},
-		rigidbody = physics.rigidbody(
-			position = {0.2, 0, 0.2},
-			// The ground!
-			inverse_mass = 0,
-			inverse_inertia_tensor_local = physics.INERTIA_TENSOR_INFINITE_MASS,
-		),
-		model     = rl.LoadModelFromMesh(cube_mesh),
-		coll      = physics.collider(
-			&item.rigidbody,
-			// physics.BoxShape{half_size = Vec3{0.5, 0.5, 0.5}},
-			physics.PlaneShape{normal={0, 1, 0}},
-		),
-	}
+	add_item(state, {0, 1, 0}, physics.BoxShape{half_size={0.5, 0.5, 0.5}})
+	add_item(state, {0, 0, 0}, physics.PlaneShape{normal={0, 1, 0}})
+	add_item(state, {0, 4, 0}, physics.BoxShape{half_size={0.5, 0.5, 0.5}})
+	add_item(state, {2, 4, 0}, physics.SphereShape{radius=0.5})
+	add_item(state, {4, 4, 0}, physics.SphereShape{radius=0.5})
 
 	state.world = physics.make_world(max_num_contacts = 1024)
 
@@ -280,9 +252,6 @@ run_game :: proc(state: ^GameState) {
 				rl.DrawLine3D({0, 0, 0}, z_axis, {0,0 ,255, 255})
 			}
 
-
-
-
 			for &item in state.items {
 				angle, axis := linalg.angle_axis_from_quaternion(item.rigidbody.rotation)
 				rl.DrawModelEx(
@@ -343,6 +312,8 @@ run_game :: proc(state: ^GameState) {
 
 		// UI
 		{
+			rl.DrawFPS(0, 0);
+
 			rect := ui.rect_from_size(state.size.x, state.size.y)
 
 			ui.inset(&rect, 10)

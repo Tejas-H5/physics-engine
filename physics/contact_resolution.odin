@@ -86,7 +86,7 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 
 		last_contact : ^Contact
 		// TODO: 1000
-		POSITION_ITERATIONS :: 10
+		POSITION_ITERATIONS :: 50
 		for i in 0..<POSITION_ITERATIONS {
 			worst_contact_idx := -1
 			worst_penetration : f32
@@ -140,7 +140,7 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 		angular_changes : [2]Vec3
 
 		// TODO: 1000
-		VELOCITY_ITERATIONS :: 5
+		VELOCITY_ITERATIONS :: 50
 		for i in 0..<VELOCITY_ITERATIONS {
 			fastest_contact : ^Contact
 			fastest_speed : f32 = 0 // negative means the contacts are seperating, we dont need to worry about those
@@ -201,7 +201,7 @@ calculate_desired_velocity :: proc(contact: ^Contact, dt: f32) {
 		restitution = 0
 	}
 
-	contact._desired_delta_velocity =
+	contact._desired_delta_velocity = 
 		-contact._relative_velocity.x +
 		-restitution * (contact._relative_velocity.x - velocity_from_acceleration)
 }
