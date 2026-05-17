@@ -58,14 +58,15 @@ load_game_state :: proc() -> ^GameState {
 		size      = {1, 1, 1},
 		color     = {255, 0, 0, 50},
 		rigidbody = physics.rigidbody(
-			position = {0, 3, 0},
+			position = {0, 1, 0},
 			inverse_inertia_tensor_local = physics.INERTIA_TENSOR_IDENTITY,
 		),
-		model     = rl.LoadModelFromMesh(cube_mesh),
+		// model     = rl.LoadModelFromMesh(cube_mesh),
+		model     = rl.LoadModelFromMesh(sphere_mesh),
 		coll      = physics.collider(
 			&item.rigidbody,
-			physics.BoxShape{half_size = Vec3{0.5, 0.5, 0.5}},
-			// physics.SphereShape{radius = 0.5},
+			// physics.BoxShape{half_size = Vec3{0.5, 0.5, 0.5}},
+			physics.SphereShape{radius = 0.5},
 		),
 	}
 
@@ -74,11 +75,16 @@ load_game_state :: proc() -> ^GameState {
 		size      = {1,1,1},
 		color     = {255, 0, 0, 50},
 		rigidbody = physics.rigidbody(
-			position = {2, 3, 0},
+			position = {0, 3, 0},
 			inverse_inertia_tensor_local = physics.INERTIA_TENSOR_IDENTITY,
 		),
-		model     = rl.LoadModelFromMesh(cube_mesh),
-		coll      = physics.collider(&item.rigidbody, physics.BoxShape{ half_size = Vec3{1, 1, 1} / 2 }),
+		// model     = rl.LoadModelFromMesh(cube_mesh),
+		model     = rl.LoadModelFromMesh(sphere_mesh),
+		coll      = physics.collider(
+			&item.rigidbody,
+			// physics.BoxShape{ half_size = Vec3{1, 1, 1} / 2 }
+			physics.SphereShape{radius = 0.5},
+		),
 	}
 
 	// Sphere
@@ -204,10 +210,12 @@ run_game :: proc(state: ^GameState) {
 
 	if rl.IsKeyDown(.R) {
 		// Reset stuff
-		player.rigidbody.velocity = 0
-		player.rigidbody.acceleration = 0
-		player.rigidbody.acceleration_last_frame = 0
-		player.rigidbody.angular_velocity = 0
+		for &item in state.items {
+			item.rigidbody.velocity = 0
+			item.rigidbody.acceleration = 0
+			item.rigidbody.acceleration_last_frame = 0
+			item.rigidbody.angular_velocity = 0
+		}
 	}
 	if rl.IsKeyDown(.P) {
 		player.rigidbody.position = {0, 4, 0}
@@ -292,42 +300,44 @@ run_game :: proc(state: ^GameState) {
 			for idx in 0 ..< state.world.contacts_idx {
 				contact := &state.world.contacts[idx]
 
+
+
 				x_axis := Vec3{10,0,0}
 				in_contact_space := contact._world_from_contact * x_axis
 				rl.DrawLine3D(contact.position, contact.position + in_contact_space, {0, 255,255,255})
 
 				in_world_space := contact._contact_from_world * in_contact_space
 				rl.DrawLine3D(contact.position, contact.position + in_world_space, {255, 0, 0, 255})
+				rl.DrawSphere(contact.position, 0.05, Color{255, 0, 0, 255})
+				rl.DrawSphere(contact.bodies[0].position, 0.05, Color{0, 0, 0, 255})
 				// rl.DrawLine3D(contact.position, contact.position + 10 * contact.normal, {0, 255,0,255})
 
 
-				// rl.DrawLine3D(
-				// 	contact.position,
-				// 	contact.position + 1 * contact.normal,
-				// 	Color{0, 255, 0, 255},
-				// )
-				// rl.DrawLine3D(
-				// 	contact.position,
-				// 	contact.position + contact.penetration * contact.normal,
-				// 	Color{255, 0, 0, 255},
-				// )
+				rl.DrawLine3D(
+					contact.position,
+					contact.position + 1 * contact.normal,
+					Color{0, 255, 0, 255},
+				)
+				rl.DrawLine3D(
+					contact.position,
+					contact.position + contact.penetration * contact.normal,
+					Color{255, 0, 0, 255},
+				)
 
 				for body in contact.bodies {
-					relative_position := contact.position - body.position
+					// relative_position := contact.position - body.position
 
 
 					// #0000FF This is what the angular velocity SHOULD be
-					torque_axis := linalg.cross(relative_position, contact.normal)
-					rl.DrawLine3D(body.position, body.position + torque_axis, Color{0, 0, 255, 255})
+					// torque_axis := linalg.cross(relative_position, contact.normal)
+					// rl.DrawLine3D(body.position, body.position + torque_axis, Color{0, 0, 255, 255})
 
 					// #00FFFF - angular velocity(actual)
-					rl.DrawLine3D(body.position, body.position + body.angular_velocity, Color{0, 255, 255, 255})
+					// rl.DrawLine3D(body.position, body.position + body.angular_velocity, Color{0, 255, 255, 255})
 					
-					rl.DrawLine3D(body.position, body.position + contact._desired_delta_velocity * contact.normal, Color{255, 0, 0, 255})
+					// rl.DrawLine3D(body.position, body.position + contact._desired_delta_velocity * contact.normal, Color{255, 0, 0, 255})
 
 				}
-
-				rl.DrawSphere(contact.position, 0.05, Color{255, 0, 0, 255})
 			}
 		}
 

@@ -98,7 +98,7 @@ Contact :: struct {
 	// assumes we can reuse this position for both bodies when resolving the contact, so 
 	// it can't be on the edge of either collider (which is how I had it before)
 	position    : Vec3,
-	// The direction in which other_coll should push back on coll
+	// The direction in which body[1] is colliding with body[0]
 	normal      : Vec3,
 	// The amount which we should move coll in the direction of normal such that they are just touching.
 	penetration : f32,

@@ -138,7 +138,7 @@ resolve_contacts :: proc(world: ^World, dt: f32) {
 		linear_changes  : [2]Vec3
 		angular_changes : [2]Vec3
 
-		VELOCITY_ITERATIONS :: 1000
+		VELOCITY_ITERATIONS :: 1
 		for i in 0..<VELOCITY_ITERATIONS {
 			fastest_contact : ^Contact
 			fastest_speed2 : f32
@@ -328,14 +328,15 @@ apply_position_change :: proc(
 
 		relative_contact_position := contact._relative_contact_positions[body_idx]
 
+		sign : f32 = body_idx == 0 ? 1 : -1
+
 		// Apply linear move
-		linear_changes[body_idx] = linear_move * contact.normal
+		linear_changes[body_idx] = sign * linear_move * contact.normal
 
 		assert(linear_changes[body_idx].x < 100000)
 		assert(linear_changes[body_idx].x > -100000)
 
 		rb.position += linear_changes[body_idx]
-
 
 		// NOTE: cyclone physics is far more complex here. 
 		// The book must not have fully explained this bit yet.
@@ -343,7 +344,7 @@ apply_position_change :: proc(
 		impulsive_torque := linalg.cross(relative_contact_position, contact.normal)
 		impulse_per_move := rb._inverse_inertia_tensor * impulsive_torque
 		rotation_per_move := abs(angular_inertias[body_idx]) < EPS ? 0 : impulse_per_move / angular_inertias[body_idx]
-		rotation := angular_move * rotation_per_move
+		rotation := sign * angular_move * rotation_per_move
 
 		rb.rotation = quat_rotate_by_axis(rb.rotation, rotation)
 		angular_changes[body_idx] = rotation

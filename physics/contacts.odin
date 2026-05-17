@@ -62,7 +62,7 @@ generate_contacts_sphere_x_sphere :: proc(
 	contact.normal      = b_to_a / size
 	contact.penetration = sphere_a.radius + sphere_b.radius - size
 
-	contact.position  = a_pos + (sphere_a.radius - contact.penetration * 0.5) * contact.normal
+	contact.position  = b_pos + (sphere_b.radius - contact.penetration * 0.5) * contact.normal
 	contact.bodies = { sphere_a_coll.rigidbody, sphere_b_coll.rigidbody }
 }
 
@@ -88,7 +88,7 @@ generate_contacts_plane_x_sphere :: proc(
 	contact := get_next_contact(dst)
 	contact.normal      = plane.normal
 	contact.penetration = penetration
-	contact.position    = sphere_pos + (-sphere.radius * 0.5) * contact.normal
+	contact.position    = sphere_pos + (-sphere.radius + penetration * 0.5) * contact.normal
 	contact.bodies      = { sphere_coll.rigidbody, plane_coll.rigidbody }
 }
 
@@ -147,7 +147,7 @@ generate_contacts_sphere_x_box :: proc(
 	normal    := linalg.normalize(to_sphere)
 
 	contact := get_next_contact(dst)
-	contact.normal       = -normal 
+	contact.normal       = normal 
 	contact.penetration  = sphere.radius - math.sqrt(dist_squared)
 	contact.position     = closest_point + 0.5 * contact.penetration * contact.normal
 	contact.bodies       = { sphere_coll.rigidbody, box_coll.rigidbody }
